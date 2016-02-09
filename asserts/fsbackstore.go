@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -158,4 +159,91 @@ func (fsbs *filesystemBackstore) Search(assertType *AssertionType, headers map[s
 		}
 	}
 	return fsbs.search(assertType, diskPattern, candCb)
+}
+
+func (fsbs *filesystemBackstore) Scan(assertType *AssertionType, scanCb func(Assertion, error)) error {
+	// XXX: locking
+
+	assertTypeTop := filepath.Join(fsbs.top, assertType.Name)
+	_, err := os.Lstat(assertTypeTop)
+	if os.IsNotExist(err) {
+		// nothing to scan, that's ok
+		return nil
+	}
+
+	n := len(assertType.PrimaryKey)
+
+	entryCb := func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			scanCb(nil, fmt.Errorf("scan %s %q: %v", assertType.Name, path, err))
+			return nil
+		}
+		primaryPath, err := filepath.Rel(assertTypeTop, path)
+		if err != nil {
+			panic(err)
+		}
+		var comps []string
+		if primaryPath != "." {
+			comps = strings.Split(primaryPath, "/")
+		}
+		m := len(comps)
+		if m <= n {
+			// directory
+			if !info.IsDir() {
+				scanCb(nil, fmt.Errorf("scan %s %q: expected directory", assertType.Name, path))
+				return nil
+			}
+			if info.Mode().Perm()&0002 != 0 {
+				scanCb(nil, fmt.Errorf("scan %s %q: directory is unexpectedly world-writable", assertType.Name, path))
+			}
+			return nil
+		}
+		// actual assertion
+		if !info.Mode().IsRegular() {
+			scanCb(nil, fmt.Errorf("scan %s %q: expected regular file", assertType.Name, path))
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if comps[m-1] != activeFname {
+			scanCb(nil, fmt.Errorf("scan %s %q: assertion file unexpectedly not named %q", assertType.Name, path, activeFname))
+			return nil
+		}
+		if info.Mode().Perm()&0002 != 0 {
+			scanCb(nil, fmt.Errorf("scan %s %q: is unexpectedly world-writable", assertType.Name, path))
+		}
+
+		a, err := fsbs.readAssertion(assertType, primaryPath)
+		if err != nil {
+			scanCb(nil, fmt.Errorf("scan %s %q: %v", assertType.Name, path, err))
+			return nil
+		}
+
+		mismatch := false
+		for i, k := range assertType.PrimaryKey {
+			keyValFromPath, err := url.QueryUnescape(comps[i])
+			if err != nil {
+				scanCb(nil, fmt.Errorf("scan %s %q: disk path %q could no be unescaped to a key value: %v", assertType.Name, path, comps[i], err))
+				return nil
+			}
+			if a.Header(k) != keyValFromPath {
+				scanCb(nil, fmt.Errorf("scan %s %q: disk path key value %q for %q does not match assertion content: %q", assertType.Name, path, keyValFromPath, k, a.Header(k)))
+				mismatch = true
+			}
+		}
+		if mismatch {
+			return nil
+		}
+
+		// pass it on
+		scanCb(a, nil)
+		return nil
+	}
+
+	err = filepath.Walk(assertTypeTop, entryCb)
+	if err != nil {
+		return fmt.Errorf("scan %s: unexpected error: %v", assertType.Name, err)
+	}
+	return nil
 }
