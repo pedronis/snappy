@@ -45,6 +45,31 @@ var (
 	Stdin  io.Reader = os.Stdin
 )
 
+func findByKeyID(mgr *asserts.GPGKeypairManager, keyID string) (asserts.PublicKey, error) {
+	var pubKey asserts.PublicKey
+	idSfx := strings.ToUpper(keyID)
+	match := func(privk asserts.PrivateKey, fpr string) (bool, error) {
+		if strings.HasSuffix(fpr, idSfx) {
+			pubKey = privk.PublicKey()
+			return true, nil
+		}
+		return false, nil
+	}
+	err := mgr.Walk(match)
+	if err != nil {
+		return nil, fmt.Errorf("cannot find key by key id %q: %v", keyID, err)
+	}
+	return pubKey, nil
+}
+
+func findByKeyHash(mgr *asserts.GPGKeypairManager, keyHash string) (asserts.PublicKey, error) {
+	pk, err := mgr.Get("", keyHash)
+	if err != nil {
+		return nil, err
+	}
+	return pk.PublicKey(), nil
+}
+
 func Run() error {
 	var opts struct {
 		Positional struct {
@@ -55,10 +80,16 @@ func Run() error {
 		Format string `long:"format" default:"yaml" description:"the format of the input statement (json|yaml)"`
 
 		AuthorityID string `long:"authority-id" description:"identifier of the signer (otherwise taken from the account-key or the statement)"`
-		KeyID       string `long:"key-id" description:"long key id of the GnuPG key to use (otherwise taken from account-key)"`
-		AccountKey  string `long:"account-key" description:"file with the account-key assertion of the key to use"`
+		KeyHash     string `long:"key-hash" description:"snappy sha3-384 hash of the GnuPG key to use (otherwise taken from account-key)"`
+		KeyID       string `long:"key-id" description:"key id of the GnuPG key to use (otherwise taken from account-key)"`
+
+		AccountKey string `long:"account-key" description:"file with the account-key assertion of the key to use"`
 
 		Revision int `long:"revision" description:"revision to set for the assertion (starts and defaults to 0)"`
+
+		PublicKeyID string `long:"public-key-id" description:"key id of the GnuPG key to embed into the signed account-key"`
+
+		PublicKeyHash string `long:"public-key-hash" description:"snappy sha3-384 key hash of the GnuPG key to embed into the signed account-key"`
 
 		GPGHomedir string `long:"gpg-homedir" description:"alternative GPG homedir, otherwise the default ~/.gnupg is used (or GNUPGHOME env var can be set instead)"`
 	}
@@ -99,13 +130,52 @@ func Run() error {
 
 	keypairMgr := asserts.NewGPGKeypairManager(opts.GPGHomedir)
 
+	keyHash := opts.KeyHash
+
+	if keyHash == "" && opts.KeyID != "" {
+		pubKey, err := findByKeyID(keypairMgr, opts.KeyID)
+		if err != nil {
+			return err
+		}
+		if pubKey != nil {
+			keyHash = pubKey.SHA3_384()
+		}
+	}
+
+	var overrides map[string]interface{}
+
+	assertType := opts.Positional.AssertionType
+
+	if opts.PublicKeyID != "" || opts.PublicKeyHash != "" {
+		if assertType != "account-key" {
+			return fmt.Errorf("does not make sense to specify --public-key-id/hash when the type is not account-key")
+		}
+
+		overrides = make(map[string]interface{})
+		var pubKey asserts.PublicKey
+		var err error
+		if opts.PublicKeyHash != "" {
+			pubKey, err = findByKeyHash(keypairMgr, opts.PublicKeyHash)
+		} else {
+			pubKey, err = findByKeyID(keypairMgr, opts.PublicKeyID)
+		}
+		if err != nil {
+			return err
+		}
+		err = fillInKeyDetails(overrides, pubKey)
+		if err != nil {
+			return fmt.Errorf("cannot fill in key details: %v", err)
+		}
+	}
+
 	signReq := tool.SignRequest{
 		AccountKey:         accountKey,
-		KeyID:              strings.ToLower(opts.KeyID),
+		KeyHash:            keyHash,
 		AuthorityID:        opts.AuthorityID,
-		AssertionType:      opts.Positional.AssertionType,
+		AssertionType:      assertType,
 		StatementMediaType: mediaType,
 		Statement:          statement,
+		Overrides:          overrides,
 		Revision:           opts.Revision,
 	}
 
@@ -126,4 +196,14 @@ func readStatement(statementFile string) ([]byte, error) {
 		return ioutil.ReadAll(Stdin)
 	}
 	return ioutil.ReadFile(statementFile)
+}
+
+func fillInKeyDetails(m map[string]interface{}, pubKey asserts.PublicKey) error {
+	encodedPubKey, err := asserts.EncodePublicKey(pubKey)
+	if err != nil {
+		return err
+	}
+	m["body"] = string(encodedPubKey)
+	m["public-key-sha3-384"] = pubKey.SHA3_384()
+	return nil
 }

@@ -75,12 +75,31 @@ func (s *snapassertSuite) TearDownTest(c *C) {
 }
 
 func (s *snapassertSuite) TestHappy(c *C) {
-	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-id", assertstest.DevKeyID, "--authority-id", "devel1", "snap-build"}
+	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-hash", assertstest.DevKeyHash, "--authority-id", "devel1", "snap-build"}
 
 	s.stdin.Write([]byte(fmt.Sprintf(`series: "16"
 snap-id: snapidsnapidsnapidsnapidsnapidsn
-snap-digest: sha512-pKvURIxJVi2CgRXROh_M6pJ_UrTVRZKX-LQ-QtqJI4vBNibkPcs43bCCSIkn7JBPtCBXRDmD6IWFF51QVRr-Yg
-snap-size: 1
+snap-sha3-384: QlqR0uAWEAWF5Nwnzj5kqmmwFslYPu1IL16MKtLKhwhv0kpBv5wKZ_axf_nf_2cL
+snap-size: "1"
+grade: devel
+timestamp: %s
+`, time.Now().Format(time.RFC3339))))
+
+	err := snapassert.Run()
+	c.Assert(err, IsNil)
+
+	a, err := asserts.Decode(s.stdout.Bytes())
+	c.Assert(err, IsNil)
+	c.Check(a.Type(), Equals, asserts.SnapBuildType)
+}
+
+func (s *snapassertSuite) TestHappyKeyID(c *C) {
+	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-id", assertstest.DevKeyPGPFingerprint, "--authority-id", "devel1", "snap-build"}
+
+	s.stdin.Write([]byte(fmt.Sprintf(`series: "16"
+snap-id: snapidsnapidsnapidsnapidsnapidsn
+snap-sha3-384: QlqR0uAWEAWF5Nwnzj5kqmmwFslYPu1IL16MKtLKhwhv0kpBv5wKZ_axf_nf_2cL
+snap-size: "1"
 grade: devel
 timestamp: %s
 `, time.Now().Format(time.RFC3339))))
@@ -106,11 +125,11 @@ func (s *snapassertSuite) TestHappyJSONAccountKeyStatementFile(c *C) {
 	mockAccKey := "type: account-key\n" +
 		"authority-id: canonical\n" +
 		"account-id: user-id1\n" +
-		"public-key-id: " + assertstest.DevKeyID + "\n" +
-		"public-key-fingerprint: " + assertstest.DevKeyFingerprint + "\n" +
+		"public-key-sha3-384: " + assertstest.DevKeyHash + "\n" +
 		"since: " + now.Format(time.RFC3339) + "\n" +
 		"until: " + now.AddDate(1, 0, 0).Format(time.RFC3339) + "\n" +
-		fmt.Sprintf("body-length: %v", len(pubKeyEncoded)) + "\n\n" +
+		fmt.Sprintf("body-length: %v", len(pubKeyEncoded)) + "\n" +
+		"sign-key-sha3-384: Jv8_JiHiIzJVcO9M55pPdqSDWUvuhfDIBJUS-3VW7F_idjix7Ffn5qMxB21ZQuij" + "\n\n" +
 		string(pubKeyEncoded) + "\n\n" +
 		"openpgp c2ln"
 
@@ -118,12 +137,12 @@ func (s *snapassertSuite) TestHappyJSONAccountKeyStatementFile(c *C) {
 	c.Assert(err, IsNil)
 
 	headers := map[string]interface{}{
-		"series":      "16",
-		"snap-id":     "snapidsnapidsnapidsnapidsnapidsn",
-		"snap-digest": "sha512-pKvURIxJVi2CgRXROh_M6pJ_UrTVRZKX-LQ-QtqJI4vBNibkPcs43bCCSIkn7JBPtCBXRDmD6IWFF51QVRr-Yg",
-		"snap-size":   1,
-		"grade":       "devel",
-		"timestamp":   now.Format(time.RFC3339),
+		"series":        "16",
+		"snap-id":       "snapidsnapidsnapidsnapidsnapidsn",
+		"snap-sha3-384": "QlqR0uAWEAWF5Nwnzj5kqmmwFslYPu1IL16MKtLKhwhv0kpBv5wKZ_axf_nf_2cL",
+		"snap-size":     "1",
+		"grade":         "devel",
+		"timestamp":     now.Format(time.RFC3339),
 	}
 
 	b, err := json.Marshal(headers)
@@ -140,4 +159,52 @@ func (s *snapassertSuite) TestHappyJSONAccountKeyStatementFile(c *C) {
 	a, err := asserts.Decode(s.stdout.Bytes())
 	c.Assert(err, IsNil)
 	c.Check(a.Type(), Equals, asserts.SnapBuildType)
+}
+
+func (s *snapassertSuite) TestHappyAccountKeyKeyIDs(c *C) {
+	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-id", assertstest.DevKeyPGPFingerprint, "--public-key-id", assertstest.DevKeyPGPFingerprint, "--authority-id", "devel1", "account-key"}
+
+	now := time.Now()
+	until := now.AddDate(5, 0, 0) // XXX: we don't to be forced to set until actully
+
+	s.stdin.Write([]byte(fmt.Sprintf(`
+account-id: devel1
+since: %s
+until: %s
+`, now.Format(time.RFC3339), until.Format(time.RFC3339))))
+
+	err := snapassert.Run()
+	c.Assert(err, IsNil)
+
+	a, err := asserts.Decode(s.stdout.Bytes())
+	c.Assert(err, IsNil)
+	c.Check(a.Type(), Equals, asserts.AccountKeyType)
+	ak := a.(*asserts.AccountKey)
+	c.Check(ak.AuthorityID(), Equals, "devel1")
+	c.Check(ak.AccountID(), Equals, "devel1")
+	c.Check(ak.PublicKeySHA3_384(), Equals, assertstest.DevKeyHash)
+}
+
+func (s *snapassertSuite) TestHappyAccountKeyKeyHashes(c *C) {
+	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-hash", assertstest.DevKeyHash, "--public-key-hash", assertstest.DevKeyHash, "--authority-id", "devel1", "account-key"}
+
+	now := time.Now()
+	until := now.AddDate(5, 0, 0) // XXX: we don't to be forced to set until actully
+
+	s.stdin.Write([]byte(fmt.Sprintf(`
+account-id: devel1
+since: %s
+until: %s
+`, now.Format(time.RFC3339), until.Format(time.RFC3339))))
+
+	err := snapassert.Run()
+	c.Assert(err, IsNil)
+
+	a, err := asserts.Decode(s.stdout.Bytes())
+	c.Assert(err, IsNil)
+	c.Check(a.Type(), Equals, asserts.AccountKeyType)
+	ak := a.(*asserts.AccountKey)
+	c.Check(ak.AuthorityID(), Equals, "devel1")
+	c.Check(ak.AccountID(), Equals, "devel1")
+	c.Check(ak.PublicKeySHA3_384(), Equals, assertstest.DevKeyHash)
 }

@@ -42,8 +42,8 @@ type SignRequest struct {
 	// The key to use can be speficied either passing the text of
 	// an account-key assertion in AccountKey
 	AccountKey []byte
-	// or passing the key id in KeyID
-	KeyID string
+	// or passing the key hash in KeyHash
+	KeyHash string
 	// and an optional account-id of the signer (if left out headers value are consulted) in AuthorityID
 	AuthorityID string
 
@@ -59,6 +59,10 @@ type SignRequest struct {
 	// "headers": mapping with the header fields
 	// "body": used as the body of the assertion
 	Statement []byte
+
+	// Overrides let specify further header values overriding Statement,
+	// the special key "body" can be used to override the body
+	Overrides map[string]interface{}
 
 	// The revision of the new assertion
 	Revision int
@@ -99,8 +103,8 @@ func Sign(req *SignRequest, keypairMgr asserts.KeypairManager) ([]byte, error) {
 	if req.Revision < 0 {
 		return nil, fmt.Errorf("assertion revision cannot be negative")
 	}
-	if req.AccountKey == nil && req.KeyID == "" {
-		return nil, fmt.Errorf("both account-key and key id were not specified")
+	if req.AccountKey == nil && req.KeyHash == "" {
+		return nil, fmt.Errorf("both account-key and key hash were not specified")
 	}
 
 	var nestedStatement nestedStatement
@@ -116,22 +120,19 @@ func Sign(req *SignRequest, keypairMgr asserts.KeypairManager) ([]byte, error) {
 		}
 	}
 
-	headers, err := stringify(nestedStatement.Headers)
-	if err != nil {
-		return nil, err
-	}
+	headers := nestedStatement.Headers
 	body := []byte(nestedStatement.Body)
 
-	keyID := req.KeyID
+	keyHash := req.KeyHash
 	authorityID := req.AuthorityID
 
 	if req.AccountKey != nil {
-		if keyID != "" || authorityID != "" {
-			return nil, fmt.Errorf("cannot mix specifying an account-key together with key id and/or authority-id")
+		if keyHash != "" || authorityID != "" {
+			return nil, fmt.Errorf("cannot mix specifying an account-key together with key hash and/or authority-id")
 		}
 
 		// use the account-key as a handle to get the information about
-		// signer and key id
+		// signer and key hash
 		a, err := asserts.Decode(req.AccountKey)
 		if err != nil {
 			return nil, fmt.Errorf("cannot parse handle account-key: %v", err)
@@ -140,31 +141,35 @@ func Sign(req *SignRequest, keypairMgr asserts.KeypairManager) ([]byte, error) {
 		if !ok {
 			return nil, fmt.Errorf("cannot use handle account-key, not actually an account-key, got: %s", a.Type().Name)
 		}
-		keyID = accKey.PublicKeyID()
-		authorityID = accKey.AccountID()
 
-		// extra sanity checks about fingerprint
-		pk, err := keypairMgr.Get(authorityID, keyID)
-		if err != nil {
-			return nil, err
-		}
-		expFpr := accKey.PublicKeyFingerprint()
-		gotFpr := pk.PublicKey().Fingerprint()
-		if gotFpr != expFpr {
-			return nil, fmt.Errorf("cannot use found private key, fingerprint does not match account-key, expected %q, got: %s", expFpr, gotFpr)
-		}
+		keyHash = accKey.PublicKeySHA3_384()
+		authorityID = accKey.AccountID()
 	}
 
 	if authorityID != "" {
 		headers["authority-id"] = authorityID
 	}
 
-	if headers["authority-id"] == "" {
+	if headers["authority-id"] == nil {
 		return nil, fmt.Errorf("cannot sign assertion with unspecified signer identifier (aka authority-id)")
 	}
 
 	if req.Revision != 0 {
 		headers["revision"] = strconv.Itoa(req.Revision)
+	}
+
+	if req.Overrides != nil {
+		for k, v := range req.Overrides {
+			if k == "body" {
+				bodyStr, ok := v.(string)
+				if !ok {
+					return nil, fmt.Errorf("body overrid must be a string: %v", v)
+				}
+				body = []byte(bodyStr)
+				continue
+			}
+			headers[k] = v
+		}
 	}
 
 	adb, err := asserts.OpenDatabase(&asserts.DatabaseConfig{
@@ -174,76 +179,10 @@ func Sign(req *SignRequest, keypairMgr asserts.KeypairManager) ([]byte, error) {
 		return nil, err
 	}
 
-	a, err := adb.Sign(typ, headers, body, keyID)
+	a, err := adb.Sign(typ, headers, body, keyHash)
 	if err != nil {
 		return nil, err
 	}
 
 	return asserts.Encode(a), nil
-}
-
-// stringify lets the invoker use a limited amount of structured input
-// without having to convert everything obvious to strings upfront on
-// their side, we convert integers, bool (to yes|no), list of strings
-// (to comma separated) and nil (to empty).
-func stringify(m map[string]interface{}) (map[string]string, error) {
-	res := make(map[string]string, len(m))
-	for k, w := range m {
-		var s string
-		switch v := w.(type) {
-		case nil:
-			s = ""
-		case bool:
-			if v {
-				s = "yes"
-			} else {
-				s = "no"
-			}
-		case string:
-			s = v
-		case json.Number:
-			_, err := v.Int64()
-			if err != nil {
-				return nil, fmt.Errorf("cannot turn header field %q number value into an integer (other number types are not supported): %v", k, w)
-			}
-			s = v.String()
-		case int:
-			s = strconv.Itoa(v)
-		case []interface{}:
-			elems := make([]string, len(v))
-			estimate := 0
-			for i, wel := range v {
-				el, ok := wel.(string)
-				if !ok {
-					return nil, fmt.Errorf("cannot turn header field %q list value into string, has non-string element with type %T: %v", k, wel, wel)
-				}
-				elems[i] = el
-				estimate += len(el) + 2 // ",\n"
-			}
-			buf := new(bytes.Buffer)
-			buf.Grow(estimate)
-			last := len(elems) - 1
-			curLine := 0
-			for i, el := range elems {
-				comma := 1
-				if i == last {
-					comma = 0
-				}
-				if curLine != 0 && curLine+len(el)+comma >= 78 {
-					buf.WriteRune('\n')
-					curLine = 0
-				}
-				buf.WriteString(el)
-				if comma != 0 {
-					buf.WriteRune(',')
-				}
-				curLine += len(el) + comma
-			}
-			s = buf.String()
-		default:
-			return nil, fmt.Errorf("cannot turn header field %q value with type %T into string: %v", k, w, w)
-		}
-		res[k] = s
-	}
-	return res, nil
 }
