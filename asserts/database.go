@@ -62,12 +62,12 @@ func (nbs nullBackstore) Search(t *AssertionType, h map[string]string, f func(As
 type KeypairManager interface {
 	// Put stores the given private/public key pair for identity,
 	// making sure it can be later retrieved by authority-id and
-	// key hash with Get().
-	// Trying to store a key with an already present key hash should
+	// key id with Get().
+	// Trying to store a key with an already present key id should
 	// result in an error.
 	Put(authorityID string, privKey PrivateKey) error
-	// Get returns the private/public key pair with the given key hash.
-	Get(authorityID, keyHash string) (PrivateKey, error)
+	// Get returns the private/public key pair with the given key id.
+	Get(authorityID, keyID string) (PrivateKey, error)
 }
 
 // DatabaseConfig for an assertion database.
@@ -124,9 +124,9 @@ type RODatabase interface {
 }
 
 // A Checker defines a check on an assertion considering aspects such as
-// its signature, the signing key, and consistency with other
+// the signing key, and consistency with other
 // assertions in the database.
-type Checker func(assert Assertion, signature Signature, signingKey *AccountKey, roDB RODatabase, checkTime time.Time) error
+type Checker func(assert Assertion, signingKey *AccountKey, roDB RODatabase, checkTime time.Time) error
 
 // Database holds assertions and can be used to sign or check
 // further assertions.
@@ -158,7 +158,7 @@ func OpenDatabase(cfg *DatabaseConfig) (*Database, error) {
 			accKey := accepted
 			err := trustedBackstore.Put(AccountKeyType, accKey)
 			if err != nil {
-				return nil, fmt.Errorf("error loading for use trusted account key %q for %q: %v", accKey.PublicKeySHA3_384(), accKey.AccountID(), err)
+				return nil, fmt.Errorf("error loading for use trusted account key %q for %q: %v", accKey.PublicKeyID(), accKey.AccountID(), err)
 			}
 
 		case *Account:
@@ -201,19 +201,19 @@ var (
 	base64HashLike = regexp.MustCompile("^[[:alnum:]_-]*$")
 )
 
-func (db *Database) safeGetPrivateKey(authorityID, keyHash string) (PrivateKey, error) {
-	if keyHash == "" {
-		return nil, fmt.Errorf("key hash is empty")
+func (db *Database) safeGetPrivateKey(authorityID, keyID string) (PrivateKey, error) {
+	if keyID == "" {
+		return nil, fmt.Errorf("key id is empty")
 	}
-	if !base64HashLike.MatchString(keyHash) {
-		return nil, fmt.Errorf("key hash contains unexpected chars: %q", keyHash)
+	if !base64HashLike.MatchString(keyID) {
+		return nil, fmt.Errorf("key id contains unexpected chars: %q", keyID)
 	}
-	return db.keypairMgr.Get(authorityID, keyHash)
+	return db.keypairMgr.Get(authorityID, keyID)
 }
 
-// PublicKey returns the public key owned by authorityID that has the given key hash.
-func (db *Database) PublicKey(authorityID string, keyHash string) (PublicKey, error) {
-	privKey, err := db.safeGetPrivateKey(authorityID, keyHash)
+// PublicKey returns the public key owned by authorityID that has the given key id.
+func (db *Database) PublicKey(authorityID string, keyID string) (PublicKey, error) {
+	privKey, err := db.safeGetPrivateKey(authorityID, keyID)
 	if err != nil {
 		return nil, err
 	}
@@ -221,29 +221,29 @@ func (db *Database) PublicKey(authorityID string, keyHash string) (PublicKey, er
 }
 
 // Sign assembles an assertion with the provided information and signs it
-// with the private key from `headers["authority-id"]` that has the provided key hash.
-func (db *Database) Sign(assertType *AssertionType, headers map[string]interface{}, body []byte, keyHash string) (Assertion, error) {
+// with the private key from `headers["authority-id"]` that has the provided key id.
+func (db *Database) Sign(assertType *AssertionType, headers map[string]interface{}, body []byte, keyID string) (Assertion, error) {
 	authorityID, err := checkNotEmptyString(headers, "authority-id")
 	if err != nil {
 		return nil, err
 	}
-	privKey, err := db.safeGetPrivateKey(authorityID, keyHash)
+	privKey, err := db.safeGetPrivateKey(authorityID, keyID)
 	if err != nil {
 		return nil, err
 	}
 	return assembleAndSign(assertType, headers, body, privKey)
 }
 
-// findAccountKey finds an AccountKey exactly with account id and key hash.
-func (db *Database) findAccountKey(authorityID, keyHash string) (*AccountKey, error) {
-	key := []string{keyHash}
+// findAccountKey finds an AccountKey exactly with account id and key id.
+func (db *Database) findAccountKey(authorityID, keyID string) (*AccountKey, error) {
+	key := []string{keyID}
 	// consider trusted account keys then disk stored account keys
 	for _, bs := range db.backstores {
 		a, err := bs.Get(AccountKeyType, key)
 		if err == nil {
 			hit := a.(*AccountKey)
 			if hit.AccountID() != authorityID {
-				return nil, fmt.Errorf("found public key %q from %q but expected it from: %s", keyHash, hit.AccountID(), authorityID)
+				return nil, fmt.Errorf("found public key %q from %q but expected it from: %s", keyID, hit.AccountID(), authorityID)
 			}
 			return hit, nil
 		}
@@ -265,12 +265,6 @@ func (db *Database) IsTrustedAccount(accountID string) bool {
 
 // Check tests whether the assertion is properly signed and consistent with all the stored knowledge.
 func (db *Database) Check(assert Assertion) error {
-	_, signature := assert.Signature()
-	// TODO: rework not to do this here, and use SigningKey
-	sig, err := decodeSignature(signature)
-	if err != nil {
-		return err
-	}
 	// TODO: later may need to consider type of assert to find candidate keys
 	accKey, err := db.findAccountKey(assert.AuthorityID(), assert.SigningKey())
 	if err == ErrNotFound {
@@ -282,7 +276,7 @@ func (db *Database) Check(assert Assertion) error {
 
 	now := time.Now()
 	for _, checker := range db.checkers {
-		err := checker(assert, sig, accKey, db, now)
+		err := checker(assert, accKey, db, now)
 		if err != nil {
 			return err
 		}
@@ -406,7 +400,7 @@ func (db *Database) FindMany(assertionType *AssertionType, headers map[string]st
 // assertion checkers
 
 // CheckSigningKeyIsNotExpired checks that the signing key is not expired.
-func CheckSigningKeyIsNotExpired(assert Assertion, signature Signature, signingKey *AccountKey, roDB RODatabase, checkTime time.Time) error {
+func CheckSigningKeyIsNotExpired(assert Assertion, signingKey *AccountKey, roDB RODatabase, checkTime time.Time) error {
 	if !signingKey.isKeyValidAt(checkTime) {
 		return fmt.Errorf("assertion is signed with expired public key %q from %q", assert.SigningKey(), assert.AuthorityID())
 	}
@@ -414,9 +408,13 @@ func CheckSigningKeyIsNotExpired(assert Assertion, signature Signature, signingK
 }
 
 // CheckSignature checks that the signature is valid.
-func CheckSignature(assert Assertion, signature Signature, signingKey *AccountKey, roDB RODatabase, checkTime time.Time) error {
-	content, _ := assert.Signature()
-	err := signingKey.publicKey().verify(content, signature)
+func CheckSignature(assert Assertion, signingKey *AccountKey, roDB RODatabase, checkTime time.Time) error {
+	content, encSig := assert.Signature()
+	signature, err := decodeSignature(encSig)
+	if err != nil {
+		return err
+	}
+	err = signingKey.publicKey().verify(content, signature)
 	if err != nil {
 		return fmt.Errorf("failed signature verification: %v", err)
 	}
@@ -429,7 +427,7 @@ type timestamped interface {
 
 // CheckTimestampVsSigningKeyValidity verifies that the timestamp of
 // the assertion is within the signing key validity.
-func CheckTimestampVsSigningKeyValidity(assert Assertion, signature Signature, signingKey *AccountKey, roDB RODatabase, checkTime time.Time) error {
+func CheckTimestampVsSigningKeyValidity(assert Assertion, signingKey *AccountKey, roDB RODatabase, checkTime time.Time) error {
 	if tstamped, ok := assert.(timestamped); ok {
 		if !signingKey.isKeyValidAt(tstamped.Timestamp()) {
 			return fmt.Errorf("%s assertion timestamp outside of signing key validity", assert.Type().Name)
@@ -447,7 +445,7 @@ type consistencyChecker interface {
 }
 
 // CheckCrossConsistency verifies that the assertion is consistent with the other statements in the database.
-func CheckCrossConsistency(assert Assertion, signature Signature, signingKey *AccountKey, roDB RODatabase, checkTime time.Time) error {
+func CheckCrossConsistency(assert Assertion, signingKey *AccountKey, roDB RODatabase, checkTime time.Time) error {
 	// see if the assertion requires further checks
 	if checker, ok := assert.(consistencyChecker); ok {
 		return checker.checkConsistency(roDB, signingKey)

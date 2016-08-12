@@ -21,6 +21,7 @@ package asserts
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -97,8 +98,9 @@ func (gkm *GPGKeypairManager) retrieve(fpr string) (PrivateKey, error) {
 	return privKey, nil
 }
 
-// Walk iterates over all the RSA private keys in the local GPG setup calling the provided callback until this returns true for done, or errors.
-func (gkm *GPGKeypairManager) Walk(consider func(privk PrivateKey, fingerprint string) (done bool, err error)) error {
+// Walk iterates over all the RSA private keys in the local GPG setup calling the provided callback until this returns an error
+// TODO: revisit exposing this
+func (gkm *GPGKeypairManager) Walk(consider func(privk PrivateKey, fingerprint string) error) error {
 	// see GPG source doc/DETAILS
 	out, err := gkm.gpg(nil, "--batch", "--list-secret-keys", "--fingerprint", "--with-colons")
 	if err != nil {
@@ -141,12 +143,9 @@ func (gkm *GPGKeypairManager) Walk(consider func(privk PrivateKey, fingerprint s
 		if err != nil {
 			return err
 		}
-		done, err := consider(privKey, fpr)
+		err = consider(privKey, fpr)
 		if err != nil {
 			return err
-		}
-		if done {
-			return nil
 		}
 	}
 	return nil
@@ -157,23 +156,24 @@ func (gkm *GPGKeypairManager) Put(authorityID string, privKey PrivateKey) error 
 	return fmt.Errorf("cannot import private key into GPG keyring")
 }
 
-func (gkm *GPGKeypairManager) Get(authorityID, keyHash string) (PrivateKey, error) {
+func (gkm *GPGKeypairManager) Get(authorityID, keyID string) (PrivateKey, error) {
+	stop := errors.New("stop marker")
 	var hit PrivateKey
-	match := func(privk PrivateKey, fpr string) (bool, error) {
-		if privk.PublicKey().SHA3_384() == keyHash {
+	match := func(privk PrivateKey, fpr string) error {
+		if privk.PublicKey().ID() == keyID {
 			hit = privk
-			return true, nil
+			return stop
 		}
-		return false, nil
+		return nil
 	}
 	err := gkm.Walk(match)
+	if err == stop {
+		return hit, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	if hit != nil {
-		return hit, nil
-	}
-	return nil, fmt.Errorf("cannot find key %q in GPG keyring", keyHash)
+	return nil, fmt.Errorf("cannot find key %q in GPG keyring", keyID)
 }
 
 func (gkm *GPGKeypairManager) sign(fingerprint string, content []byte) ([]byte, error) {
