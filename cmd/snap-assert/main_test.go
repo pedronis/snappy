@@ -131,7 +131,7 @@ func (s *snapassertSuite) TestHappyJSONAccountKeyStatementFile(c *C) {
 		fmt.Sprintf("body-length: %v", len(pubKeyEncoded)) + "\n" +
 		"sign-key-sha3-384: Jv8_JiHiIzJVcO9M55pPdqSDWUvuhfDIBJUS-3VW7F_idjix7Ffn5qMxB21ZQuij" + "\n\n" +
 		string(pubKeyEncoded) + "\n\n" +
-		"openpgp c2ln"
+		"AXNpZw=="
 
 	err = ioutil.WriteFile(accKeyFile, []byte(mockAccKey), 0655)
 	c.Assert(err, IsNil)
