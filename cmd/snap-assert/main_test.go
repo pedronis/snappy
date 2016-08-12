@@ -165,13 +165,11 @@ func (s *snapassertSuite) TestHappyAccountKeyKeyIDs(c *C) {
 	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-pgp-id", assertstest.DevKeyPGPFingerprint, "--public-key-pgp-id", assertstest.DevKeyPGPFingerprint, "--authority-id", "devel1", "account-key"}
 
 	now := time.Now()
-	until := now.AddDate(5, 0, 0) // XXX: we don't to be forced to set until actully
 
 	s.stdin.Write([]byte(fmt.Sprintf(`
 account-id: devel1
 since: %s
-until: %s
-`, now.Format(time.RFC3339), until.Format(time.RFC3339))))
+`, now.Format(time.RFC3339))))
 
 	err := snapassert.Run()
 	c.Assert(err, IsNil)
@@ -189,13 +187,11 @@ func (s *snapassertSuite) TestHappyAccountKeyKeyIDes(c *C) {
 	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-id", assertstest.DevKeyID, "--public-key-id", assertstest.DevKeyID, "--authority-id", "devel1", "account-key"}
 
 	now := time.Now()
-	until := now.AddDate(5, 0, 0) // XXX: we don't to be forced to set until actully
 
 	s.stdin.Write([]byte(fmt.Sprintf(`
 account-id: devel1
 since: %s
-until: %s
-`, now.Format(time.RFC3339), until.Format(time.RFC3339))))
+`, now.Format(time.RFC3339))))
 
 	err := snapassert.Run()
 	c.Assert(err, IsNil)
