@@ -39,11 +39,11 @@ const (
 
 // SignRequest specifies the complete input for signing an assertion.
 type SignRequest struct {
-	// The key to use can be speficied either passing the text of
+	// The key to use can be specified either passing the text of
 	// an account-key assertion in AccountKey
 	AccountKey []byte
-	// or passing the key hash in KeyHash
-	KeyHash string
+	// or passing the key id in KeyID
+	KeyID string
 	// and an optional account-id of the signer (if left out headers value are consulted) in AuthorityID
 	AuthorityID string
 
@@ -103,8 +103,8 @@ func Sign(req *SignRequest, keypairMgr asserts.KeypairManager) ([]byte, error) {
 	if req.Revision < 0 {
 		return nil, fmt.Errorf("assertion revision cannot be negative")
 	}
-	if req.AccountKey == nil && req.KeyHash == "" {
-		return nil, fmt.Errorf("both account-key and key hash were not specified")
+	if req.AccountKey == nil && req.KeyID == "" {
+		return nil, fmt.Errorf("both account-key and key id were not specified")
 	}
 
 	var nestedStatement nestedStatement
@@ -123,16 +123,16 @@ func Sign(req *SignRequest, keypairMgr asserts.KeypairManager) ([]byte, error) {
 	headers := nestedStatement.Headers
 	body := []byte(nestedStatement.Body)
 
-	keyHash := req.KeyHash
+	keyID := req.KeyID
 	authorityID := req.AuthorityID
 
 	if req.AccountKey != nil {
-		if keyHash != "" || authorityID != "" {
-			return nil, fmt.Errorf("cannot mix specifying an account-key together with key hash and/or authority-id")
+		if keyID != "" || authorityID != "" {
+			return nil, fmt.Errorf("cannot mix specifying an account-key together with key id and/or authority-id")
 		}
 
 		// use the account-key as a handle to get the information about
-		// signer and key hash
+		// signer and key id
 		a, err := asserts.Decode(req.AccountKey)
 		if err != nil {
 			return nil, fmt.Errorf("cannot parse handle account-key: %v", err)
@@ -142,7 +142,7 @@ func Sign(req *SignRequest, keypairMgr asserts.KeypairManager) ([]byte, error) {
 			return nil, fmt.Errorf("cannot use handle account-key, not actually an account-key, got: %s", a.Type().Name)
 		}
 
-		keyHash = accKey.PublicKeySHA3_384()
+		keyID = accKey.PublicKeyID()
 		authorityID = accKey.AccountID()
 	}
 
@@ -179,7 +179,7 @@ func Sign(req *SignRequest, keypairMgr asserts.KeypairManager) ([]byte, error) {
 		return nil, err
 	}
 
-	a, err := adb.Sign(typ, headers, body, keyHash)
+	a, err := adb.Sign(typ, headers, body, keyID)
 	if err != nil {
 		return nil, err
 	}

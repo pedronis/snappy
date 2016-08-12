@@ -20,6 +20,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -45,25 +46,29 @@ var (
 	Stdin  io.Reader = os.Stdin
 )
 
-func findByKeyID(mgr *asserts.GPGKeypairManager, keyID string) (asserts.PublicKey, error) {
+func findByKeyPGPID(mgr *asserts.GPGKeypairManager, keyID string) (asserts.PublicKey, error) {
+	found := errors.New("found")
 	var pubKey asserts.PublicKey
 	idSfx := strings.ToUpper(keyID)
-	match := func(privk asserts.PrivateKey, fpr string) (bool, error) {
+	match := func(privk asserts.PrivateKey, fpr string) error {
 		if strings.HasSuffix(fpr, idSfx) {
 			pubKey = privk.PublicKey()
-			return true, nil
+			return found
 		}
-		return false, nil
+		return nil
 	}
 	err := mgr.Walk(match)
+	if err == found {
+		return pubKey, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("cannot find key by key id %q: %v", keyID, err)
 	}
-	return pubKey, nil
+	return nil, nil
 }
 
-func findByKeyHash(mgr *asserts.GPGKeypairManager, keyHash string) (asserts.PublicKey, error) {
-	pk, err := mgr.Get("", keyHash)
+func findByKeyID(mgr *asserts.GPGKeypairManager, keyID string) (asserts.PublicKey, error) {
+	pk, err := mgr.Get("", keyID)
 	if err != nil {
 		return nil, err
 	}
@@ -80,16 +85,16 @@ func Run() error {
 		Format string `long:"format" default:"yaml" description:"the format of the input statement (json|yaml)"`
 
 		AuthorityID string `long:"authority-id" description:"identifier of the signer (otherwise taken from the account-key or the statement)"`
-		KeyHash     string `long:"key-hash" description:"snappy sha3-384 hash of the GnuPG key to use (otherwise taken from account-key)"`
-		KeyID       string `long:"key-id" description:"key id of the GnuPG key to use (otherwise taken from account-key)"`
+		KeyID       string `long:"key-id" description:"snappy sha3-384 key id of the GnuPG key to use (otherwise taken from account-key)"`
+		KeyPGPID    string `long:"key-pgp-id" description:"PGP key id of the GnuPG key to use (otherwise taken from account-key)"`
 
 		AccountKey string `long:"account-key" description:"file with the account-key assertion of the key to use"`
 
 		Revision int `long:"revision" description:"revision to set for the assertion (starts and defaults to 0)"`
 
-		PublicKeyID string `long:"public-key-id" description:"key id of the GnuPG key to embed into the signed account-key"`
+		PublicKeyPGPID string `long:"public-key-pgp-id" description:"PGP key id of the GnuPG key to embed into the signed account-key"`
 
-		PublicKeyHash string `long:"public-key-hash" description:"snappy sha3-384 key hash of the GnuPG key to embed into the signed account-key"`
+		PublicKeyID string `long:"public-key-id" description:"snappy sha3-384 key id of the GnuPG key to embed into the signed account-key"`
 
 		GPGHomedir string `long:"gpg-homedir" description:"alternative GPG homedir, otherwise the default ~/.gnupg is used (or GNUPGHOME env var can be set instead)"`
 	}
@@ -130,15 +135,15 @@ func Run() error {
 
 	keypairMgr := asserts.NewGPGKeypairManager(opts.GPGHomedir)
 
-	keyHash := opts.KeyHash
+	keyID := opts.KeyID
 
-	if keyHash == "" && opts.KeyID != "" {
-		pubKey, err := findByKeyID(keypairMgr, opts.KeyID)
+	if keyID == "" && opts.KeyPGPID != "" {
+		pubKey, err := findByKeyPGPID(keypairMgr, opts.KeyPGPID)
 		if err != nil {
 			return err
 		}
 		if pubKey != nil {
-			keyHash = pubKey.SHA3_384()
+			keyID = pubKey.ID()
 		}
 	}
 
@@ -146,18 +151,18 @@ func Run() error {
 
 	assertType := opts.Positional.AssertionType
 
-	if opts.PublicKeyID != "" || opts.PublicKeyHash != "" {
+	if opts.PublicKeyPGPID != "" || opts.PublicKeyID != "" {
 		if assertType != "account-key" {
-			return fmt.Errorf("does not make sense to specify --public-key-id/hash when the type is not account-key")
+			return fmt.Errorf("does not make sense to specify --public-key-(pgp-)id when the type is not account-key")
 		}
 
 		overrides = make(map[string]interface{})
 		var pubKey asserts.PublicKey
 		var err error
-		if opts.PublicKeyHash != "" {
-			pubKey, err = findByKeyHash(keypairMgr, opts.PublicKeyHash)
-		} else {
+		if opts.PublicKeyID != "" {
 			pubKey, err = findByKeyID(keypairMgr, opts.PublicKeyID)
+		} else {
+			pubKey, err = findByKeyPGPID(keypairMgr, opts.PublicKeyPGPID)
 		}
 		if err != nil {
 			return err
@@ -170,7 +175,7 @@ func Run() error {
 
 	signReq := tool.SignRequest{
 		AccountKey:         accountKey,
-		KeyHash:            keyHash,
+		KeyID:              keyID,
 		AuthorityID:        opts.AuthorityID,
 		AssertionType:      assertType,
 		StatementMediaType: mediaType,
@@ -204,6 +209,6 @@ func fillInKeyDetails(m map[string]interface{}, pubKey asserts.PublicKey) error 
 		return err
 	}
 	m["body"] = string(encodedPubKey)
-	m["public-key-sha3-384"] = pubKey.SHA3_384()
+	m["public-key-sha3-384"] = pubKey.ID()
 	return nil
 }

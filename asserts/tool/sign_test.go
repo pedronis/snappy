@@ -35,8 +35,8 @@ import (
 func TestTool(t *testing.T) { TestingT(t) }
 
 type signSuite struct {
-	keypairMgr  asserts.KeypairManager
-	testKeyHash string
+	keypairMgr asserts.KeypairManager
+	testKeyID  string
 
 	accKey      []byte
 	otherAssert []byte
@@ -49,7 +49,7 @@ func (s *signSuite) SetUpSuite(c *C) {
 
 	s.keypairMgr = asserts.NewMemoryKeypairManager()
 	s.keypairMgr.Put("user-id1", testKey)
-	s.testKeyHash = testKey.PublicKey().SHA3_384()
+	s.testKeyID = testKey.PublicKey().ID()
 
 	pubKeyEncoded, err := asserts.EncodePublicKey(testKey.PublicKey())
 	c.Assert(err, IsNil)
@@ -59,7 +59,7 @@ func (s *signSuite) SetUpSuite(c *C) {
 	mockAccKey := "type: account-key\n" +
 		"authority-id: canonical\n" +
 		"account-id: user-id1\n" +
-		"public-key-sha3-384: " + s.testKeyHash + "\n" +
+		"public-key-sha3-384: " + s.testKeyID + "\n" +
 		"since: " + now.Format(time.RFC3339) + "\n" +
 		"until: " + now.AddDate(1, 0, 0).Format(time.RFC3339) + "\n" +
 		fmt.Sprintf("body-length: %v", len(pubKeyEncoded)) + "\n" +
@@ -129,9 +129,9 @@ func expectedModelHeaders(a asserts.Assertion) map[string]interface{} {
 	}
 }
 
-func (s *signSuite) TestSignKeyHashFlatYAML(c *C) {
+func (s *signSuite) TestSignKeyIDFlatYAML(c *C) {
 	req := tool.SignRequest{
-		KeyHash:     s.testKeyHash,
+		KeyID:       s.testKeyID,
 		AuthorityID: "user-id1",
 
 		AssertionType:      "model",
@@ -151,9 +151,9 @@ func (s *signSuite) TestSignKeyHashFlatYAML(c *C) {
 	c.Check(a.Body(), IsNil)
 }
 
-func (s *signSuite) TestSignKeyHashNestedYAML(c *C) {
+func (s *signSuite) TestSignKeyIDNestedYAML(c *C) {
 	req := tool.SignRequest{
-		KeyHash:     s.testKeyHash,
+		KeyID:       s.testKeyID,
 		AuthorityID: "user-id1",
 
 		AssertionType:      "model",
@@ -173,9 +173,9 @@ func (s *signSuite) TestSignKeyHashNestedYAML(c *C) {
 	c.Check(a.Body(), IsNil)
 }
 
-func (s *signSuite) TestSignKeyHashNestedYAMLWithBodyAndRevision(c *C) {
+func (s *signSuite) TestSignKeyIDNestedYAMLWithBodyAndRevision(c *C) {
 	req := tool.SignRequest{
-		KeyHash:     s.testKeyHash,
+		KeyID:       s.testKeyID,
 		AuthorityID: "user-id1",
 
 		AssertionType:      "model",
@@ -203,9 +203,9 @@ func (s *signSuite) TestSignKeyHashNestedYAMLWithBodyAndRevision(c *C) {
 	c.Check(a.Body(), DeepEquals, []byte("BODY"))
 }
 
-func (s *signSuite) TestSignKeyHashFlatYAMLRevisionWithinHeaders(c *C) {
+func (s *signSuite) TestSignKeyIDFlatYAMLRevisionWithinHeaders(c *C) {
 	req := tool.SignRequest{
-		KeyHash:     s.testKeyHash,
+		KeyID:       s.testKeyID,
 		AuthorityID: "user-id1",
 
 		AssertionType:      "model",
@@ -247,14 +247,14 @@ func headersForJSON() map[string]interface{} {
 	}
 }
 
-func (s *signSuite) TestSignKeyHashFlatJSONRevisionWithinHeaders(c *C) {
+func (s *signSuite) TestSignKeyIDFlatJSONRevisionWithinHeaders(c *C) {
 	hdrs := headersForJSON()
 	hdrs["revision"] = "12"
 	statement, err := json.Marshal(hdrs)
 	c.Assert(err, IsNil)
 
 	req := tool.SignRequest{
-		KeyHash:     s.testKeyHash,
+		KeyID:       s.testKeyID,
 		AuthorityID: "user-id1",
 
 		AssertionType:      "model",
@@ -279,7 +279,7 @@ func (s *signSuite) TestSignKeyHashFlatJSONRevisionWithinHeaders(c *C) {
 	c.Check(a.Body(), IsNil)
 }
 
-func (s *signSuite) TestSignKeyHashNestedJSONWithBodyAndRevision(c *C) {
+func (s *signSuite) TestSignKeyIDNestedJSONWithBodyAndRevision(c *C) {
 	hdrs := headersForJSON()
 	statement, err := json.Marshal(map[string]interface{}{
 		"headers": hdrs,
@@ -288,7 +288,7 @@ func (s *signSuite) TestSignKeyHashNestedJSONWithBodyAndRevision(c *C) {
 	c.Assert(err, IsNil)
 
 	req := tool.SignRequest{
-		KeyHash:     s.testKeyHash,
+		KeyID:       s.testKeyID,
 		AuthorityID: "user-id1",
 
 		AssertionType:      "model",
@@ -345,7 +345,7 @@ func (s *signSuite) TestSignRequestOverridesHeaders(c *C) {
 	c.Assert(err, IsNil)
 
 	req := tool.SignRequest{
-		KeyHash:     s.testKeyHash,
+		KeyID:       s.testKeyID,
 		AuthorityID: "user-id1",
 
 		AssertionType:      "model",
@@ -375,7 +375,7 @@ func (s *signSuite) TestSignRequestOverridesHeaders(c *C) {
 
 func (s *signSuite) TestSignErrors(c *C) {
 	req := tool.SignRequest{
-		KeyHash:     s.testKeyHash,
+		KeyID:       s.testKeyID,
 		AuthorityID: "user-id1",
 
 		AssertionType:      "model",
@@ -413,27 +413,27 @@ func (s *signSuite) TestSignErrors(c *C) {
 				req.Revision = -10
 			},
 		},
-		{"both account-key and key hash were not specified",
+		{"both account-key and key id were not specified",
 			func(req *tool.SignRequest) {
-				req.KeyHash = ""
+				req.KeyID = ""
 				req.AccountKey = nil
 			},
 		},
-		{"cannot mix specifying an account-key together with key hash and/or authority-id",
+		{"cannot mix specifying an account-key together with key id and/or authority-id",
 			func(req *tool.SignRequest) {
 				req.AccountKey = []byte("ak")
 			},
 		},
 		{"cannot parse handle account-key:.*",
 			func(req *tool.SignRequest) {
-				req.KeyHash = ""
+				req.KeyID = ""
 				req.AuthorityID = ""
 				req.AccountKey = []byte("ak")
 			},
 		},
 		{"cannot use handle account-key, not actually an account-key, got: account",
 			func(req *tool.SignRequest) {
-				req.KeyHash = ""
+				req.KeyID = ""
 				req.AuthorityID = ""
 				req.AccountKey = s.otherAssert
 			},

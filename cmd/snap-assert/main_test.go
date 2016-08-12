@@ -75,7 +75,7 @@ func (s *snapassertSuite) TearDownTest(c *C) {
 }
 
 func (s *snapassertSuite) TestHappy(c *C) {
-	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-hash", assertstest.DevKeyHash, "--authority-id", "devel1", "snap-build"}
+	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-id", assertstest.DevKeyID, "--authority-id", "devel1", "snap-build"}
 
 	s.stdin.Write([]byte(fmt.Sprintf(`series: "16"
 snap-id: snapidsnapidsnapidsnapidsnapidsn
@@ -94,7 +94,7 @@ timestamp: %s
 }
 
 func (s *snapassertSuite) TestHappyKeyID(c *C) {
-	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-id", assertstest.DevKeyPGPFingerprint, "--authority-id", "devel1", "snap-build"}
+	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-pgp-id", assertstest.DevKeyPGPFingerprint, "--authority-id", "devel1", "snap-build"}
 
 	s.stdin.Write([]byte(fmt.Sprintf(`series: "16"
 snap-id: snapidsnapidsnapidsnapidsnapidsn
@@ -125,7 +125,7 @@ func (s *snapassertSuite) TestHappyJSONAccountKeyStatementFile(c *C) {
 	mockAccKey := "type: account-key\n" +
 		"authority-id: canonical\n" +
 		"account-id: user-id1\n" +
-		"public-key-sha3-384: " + assertstest.DevKeyHash + "\n" +
+		"public-key-sha3-384: " + assertstest.DevKeyID + "\n" +
 		"since: " + now.Format(time.RFC3339) + "\n" +
 		"until: " + now.AddDate(1, 0, 0).Format(time.RFC3339) + "\n" +
 		fmt.Sprintf("body-length: %v", len(pubKeyEncoded)) + "\n" +
@@ -162,7 +162,7 @@ func (s *snapassertSuite) TestHappyJSONAccountKeyStatementFile(c *C) {
 }
 
 func (s *snapassertSuite) TestHappyAccountKeyKeyIDs(c *C) {
-	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-id", assertstest.DevKeyPGPFingerprint, "--public-key-id", assertstest.DevKeyPGPFingerprint, "--authority-id", "devel1", "account-key"}
+	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-pgp-id", assertstest.DevKeyPGPFingerprint, "--public-key-pgp-id", assertstest.DevKeyPGPFingerprint, "--authority-id", "devel1", "account-key"}
 
 	now := time.Now()
 	until := now.AddDate(5, 0, 0) // XXX: we don't to be forced to set until actully
@@ -182,11 +182,11 @@ until: %s
 	ak := a.(*asserts.AccountKey)
 	c.Check(ak.AuthorityID(), Equals, "devel1")
 	c.Check(ak.AccountID(), Equals, "devel1")
-	c.Check(ak.PublicKeySHA3_384(), Equals, assertstest.DevKeyHash)
+	c.Check(ak.PublicKeySHA3_384(), Equals, assertstest.DevKeyID)
 }
 
-func (s *snapassertSuite) TestHappyAccountKeyKeyHashes(c *C) {
-	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-hash", assertstest.DevKeyHash, "--public-key-hash", assertstest.DevKeyHash, "--authority-id", "devel1", "account-key"}
+func (s *snapassertSuite) TestHappyAccountKeyKeyIDes(c *C) {
+	os.Args = []string{"", "--gpg-homedir", s.homedir, "--key-id", assertstest.DevKeyID, "--public-key-id", assertstest.DevKeyID, "--authority-id", "devel1", "account-key"}
 
 	now := time.Now()
 	until := now.AddDate(5, 0, 0) // XXX: we don't to be forced to set until actully
@@ -206,5 +206,5 @@ until: %s
 	ak := a.(*asserts.AccountKey)
 	c.Check(ak.AuthorityID(), Equals, "devel1")
 	c.Check(ak.AccountID(), Equals, "devel1")
-	c.Check(ak.PublicKeySHA3_384(), Equals, assertstest.DevKeyHash)
+	c.Check(ak.PublicKeySHA3_384(), Equals, assertstest.DevKeyID)
 }
