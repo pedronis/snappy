@@ -81,7 +81,6 @@ func (aks *accountKeySuite) TestDecodeOK(c *C) {
 	accKey := a.(*asserts.AccountKey)
 	c.Check(accKey.AccountID(), Equals, "acc-id1")
 	c.Check(accKey.PublicKeyID(), Equals, aks.keyID)
-	c.Check(accKey.PublicKeySHA3_384(), Equals, aks.keyID)
 	c.Check(accKey.Since(), Equals, aks.since)
 }
 
@@ -171,11 +170,11 @@ func (aks *accountKeySuite) TestDecodeInvalidPublicKey(c *C) {
 	spurious := base64.StdEncoding.EncodeToString(append(raw, "gorp"...))
 
 	invalidPublicKeyTests := []struct{ body, expectedErr string }{
-		{"", "empty public key"},
-		{"==", "public key: cannot decode base64 data: .*"},
-		{"stuff", "public key: cannot decode base64 data: .*"},
+		{"", "cannot decode public key: no data"},
+		{"==", "cannot decode public key: .*"},
+		{"stuff", "cannot decode public key: .*"},
 		{"AnNpZw==", "unsupported public key format version: 2"},
-		{"AUJST0tFTg==", "cannot decode public key data: .*"},
+		{"AUJST0tFTg==", "cannot decode public key: .*"},
 		{spurious, "public key has spurious trailing data"},
 	}
 

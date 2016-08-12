@@ -53,11 +53,6 @@ func (ak *AccountKey) PublicKeyID() string {
 	return ak.pubKey.ID()
 }
 
-// PublicKeySHA3_384 returns the sha3-384 hash used as id for lookup of the account key, same as PublicKeyID.
-func (ak *AccountKey) PublicKeySHA3_384() string {
-	return ak.pubKey.ID()
-}
-
 // isKeyValidAt returns whether the account key is valid at 'when' time.
 func (ak *AccountKey) isKeyValidAt(when time.Time) bool {
 	valid := when.After(ak.since) || when.Equal(ak.since)
