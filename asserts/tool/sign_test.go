@@ -125,7 +125,7 @@ func expectedModelHeaders(a asserts.Assertion) map[string]interface{} {
 		"store":             "brand-store",
 		"required-snaps":    []interface{}{"foo", "bar"},
 		"timestamp":         "2015-11-25T20:00:00Z",
-		"sign-key-sha3-384": a.SigningKey(),
+		"sign-key-sha3-384": a.SignKeyID(),
 	}
 }
 

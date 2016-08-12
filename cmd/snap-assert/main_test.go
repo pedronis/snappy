@@ -180,7 +180,7 @@ since: %s
 	ak := a.(*asserts.AccountKey)
 	c.Check(ak.AuthorityID(), Equals, "devel1")
 	c.Check(ak.AccountID(), Equals, "devel1")
-	c.Check(ak.PublicKeySHA3_384(), Equals, assertstest.DevKeyID)
+	c.Check(ak.PublicKeyID(), Equals, assertstest.DevKeyID)
 }
 
 func (s *snapassertSuite) TestHappyAccountKeyKeyIDes(c *C) {
@@ -202,5 +202,5 @@ since: %s
 	ak := a.(*asserts.AccountKey)
 	c.Check(ak.AuthorityID(), Equals, "devel1")
 	c.Check(ak.AccountID(), Equals, "devel1")
-	c.Check(ak.PublicKeySHA3_384(), Equals, assertstest.DevKeyID)
+	c.Check(ak.PublicKeyID(), Equals, assertstest.DevKeyID)
 }
