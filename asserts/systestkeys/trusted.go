@@ -21,14 +21,19 @@
 package systestkeys
 
 import (
+	"bytes"
+	"crypto/rsa"
 	"fmt"
+
+	"golang.org/x/crypto/openpgp/armor"
+	"golang.org/x/crypto/openpgp/packet"
 
 	"github.com/snapcore/snapd/asserts"
 	"github.com/snapcore/snapd/asserts/sysdb"
 )
 
 const (
-	TestRootPrivKey = `-----BEGIN PGP PRIVATE KEY BLOCK-----
+	encodedTestRootPrivKey = `-----BEGIN PGP PRIVATE KEY BLOCK-----
 Version: GnuPG v1
 
 lQcYBAAAAAEBEADx0Loc/418zmw2AIcf5uxC/hgshHyCU98n4cRfJph007X6gXJf
@@ -141,7 +146,7 @@ hL4gGVqEM2KEPIDwY2yqX36jE7uN9O+mIPnS4Tdj0JQ5ZD1qh34wv+4QvhgNeyP120nuS1ykO9X0
 A806uPC5QK1+cgRMUz8zJ0afDNwE/DvpBQvE5CIi9A==
 `
 
-	TestStorePrivKey = `-----BEGIN PGP PRIVATE KEY BLOCK-----
+	encodedTestStorePrivKey = `-----BEGIN PGP PRIVATE KEY BLOCK-----
 Version: GnuPG v1
 
 lQcYBAAAAAEBEACYmqZm+xLnwg1Oz5RD6N+jzfq8FLm2RT+GTtzSG5l7dKjaBz2R
@@ -239,7 +244,32 @@ var (
 	TestRootAccountKey asserts.Assertion
 	// here for convenience, does not need to be in the trusted set
 	TestStoreAccountKey asserts.Assertion
+
+	// private keys
+	TestRootPrivKey  asserts.PrivateKey
+	TestStorePrivKey asserts.PrivateKey
 )
+
+func decodePrivKey(encKey string) (asserts.PrivateKey, error) {
+	rd := bytes.NewReader([]byte(encKey))
+	blk, err := armor.Decode(rd)
+	if err != nil {
+		return nil, err
+	}
+
+	pkt, err := packet.Read(blk.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	pkPkt := pkt.(*packet.PrivateKey)
+	rsaPrivKey, ok := pkPkt.PrivateKey.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("not a RSA key")
+	}
+
+	return asserts.RSAPrivateKey(rsaPrivKey), nil
+}
 
 func init() {
 	acct, err := asserts.Decode([]byte(encodedTestRootAccount))
@@ -258,6 +288,15 @@ func init() {
 	TestRootAccount = acct
 	TestRootAccountKey = accKey
 	TestStoreAccountKey = storeAccKey
+
+	TestRootPrivKey, err = decodePrivKey(encodedTestRootPrivKey)
+	if err != nil {
+		panic(fmt.Sprintf("cannot decode test private key: %v", err))
+	}
+	TestStorePrivKey, err = decodePrivKey(encodedTestStorePrivKey)
+	if err != nil {
+		panic(fmt.Sprintf("cannot decode test private key: %v", err))
+	}
 }
 
 // Inject includes the test trusted assertions in the system trusted set.

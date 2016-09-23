@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"github.com/snapcore/snapd/asserts"
-	"github.com/snapcore/snapd/asserts/assertstest"
 	"github.com/snapcore/snapd/asserts/snapasserts"
 	"github.com/snapcore/snapd/asserts/sysdb"
 	"github.com/snapcore/snapd/asserts/systestkeys"
@@ -40,7 +39,7 @@ import (
 )
 
 func MakeFakeRefreshForSnaps(snaps []string, blobDir string) error {
-	storePrivKey, _ := assertstest.ReadPrivKey(systestkeys.TestStorePrivKey)
+	storePrivKey := systestkeys.TestStorePrivKey
 	db, err := asserts.OpenDatabase(&asserts.DatabaseConfig{
 		KeypairManager: asserts.NewMemoryKeypairManager(),
 		Backstore:      asserts.NewMemoryBackstore(),

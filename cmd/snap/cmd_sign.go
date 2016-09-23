@@ -34,14 +34,45 @@ var shortSignHelp = i18n.G("Sign an assertion")
 var longSignHelp = i18n.G(`Sign an assertion using the specified key, using the input for headers from a JSON mapping provided through stdin, the body of the assertion can be specified through a "body" pseudo-header.
 `)
 
-type cmdSign struct {
+// testing keys
+var (
+	testKeypairMgr    asserts.KeypairManager
+	testKeysLabelToID map[string]string
+)
+
+type signKeyMixin struct {
 	KeyName string `short:"k" default:"default"`
+	TestKey string `long:"use-test-key" choice:"root" choice:"store" hidden:"yes"`
+}
+
+var signKeyDescs = mixinDescs{
+	"k":            i18n.G("Name of the key to use, otherwise use the 'default' key"),
+	"use-test-key": "Use the indicated test key (only testing builds)",
+}
+
+func (skey *signKeyMixin) KeyForSigning() (keyID string, keypairMgr asserts.KeypairManager, err error) {
+	if testKeypairMgr != nil {
+		keyID := testKeysLabelToID[skey.TestKey]
+		if keyID != "" {
+			return keyID, testKeypairMgr, nil
+		}
+	}
+	gpgKeypairMgr := asserts.NewGPGKeypairManager()
+	privKey, err := gpgKeypairMgr.GetByName(skey.KeyName)
+	if err != nil {
+		return "", nil, err
+	}
+	return privKey.PublicKey().ID(), gpgKeypairMgr, nil
+}
+
+type cmdSign struct {
+	signKeyMixin
 }
 
 func init() {
 	cmd := addCommand("sign", shortSignHelp, longSignHelp, func() flags.Commander {
 		return &cmdSign{}
-	}, map[string]string{"k": i18n.G("Name of the key to use, otherwise use the default key")}, nil)
+	}, signKeyDescs, nil)
 	cmd.hidden = true
 }
 
@@ -55,14 +86,13 @@ func (x *cmdSign) Execute(args []string) error {
 		return fmt.Errorf(i18n.G("cannot read assertion input: %v"), err)
 	}
 
-	keypairMgr := asserts.NewGPGKeypairManager()
-	privKey, err := keypairMgr.GetByName(x.KeyName)
+	keyID, keypairMgr, err := x.KeyForSigning()
 	if err != nil {
 		return err
 	}
 
 	signOpts := signtool.Options{
-		KeyID:     privKey.PublicKey().ID(),
+		KeyID:     keyID,
 		Statement: statement,
 	}
 
