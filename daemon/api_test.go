@@ -710,7 +710,7 @@ func (s *apiSuite) TestRootCmd(c *check.C) {
 func (s *apiSuite) TestSysInfo(c *check.C) {
 	// check it only does GET
 	c.Check(sysInfoCmd.PUT, check.IsNil)
-	c.Check(sysInfoCmd.POST, check.IsNil)
+	//c.Check(sysInfoCmd.POST, check.IsNil)
 	c.Check(sysInfoCmd.DELETE, check.IsNil)
 	c.Assert(sysInfoCmd.GET, check.NotNil)
 
@@ -822,6 +822,48 @@ func (s *apiSuite) TestSysInfoLegacyRefresh(c *check.C) {
 	const kernelVersionKey = "kernel-version"
 	delete(rsp.Result.(map[string]interface{}), kernelVersionKey)
 	c.Check(rsp.Result, check.DeepEquals, expected)
+}
+
+func (s *apiSuite) TestSysCtlNoop(c *check.C) {
+	rec := httptest.NewRecorder()
+	s.daemon(c)
+
+	buf := bytes.NewBufferString("{}")
+	req, err := http.NewRequest("POST", "/v2/sys-info", buf)
+	c.Assert(err, check.IsNil)
+
+	sysInfoCmd.POST(sysInfoCmd, req, nil).ServeHTTP(rec, nil)
+	c.Check(rec.Code, check.Equals, 200)
+}
+
+func (s *apiSuite) TestSysCtlRefreshHold(c *check.C) {
+	d := s.daemon(c)
+
+	holdTime := time.Now().Add(5 * time.Minute)
+	text, err := json.Marshal(map[string]interface{}{
+		"refresh": map[string]interface{}{
+			"hold": holdTime,
+		},
+	})
+	c.Assert(err, check.IsNil)
+
+	buf := bytes.NewBuffer(text)
+	req, err := http.NewRequest("POST", "/v2/sys-info", buf)
+	c.Assert(err, check.IsNil)
+	rec := httptest.NewRecorder()
+	sysInfoCmd.POST(sysInfoCmd, req, nil).ServeHTTP(rec, nil)
+	c.Check(rec.Code, check.Equals, 200)
+
+	// XXX: check response
+
+	st := d.overlord.State()
+	st.Lock()
+	defer st.Unlock()
+	tr := config.NewTransaction(st)
+	var t1 time.Time
+	err = tr.Get("core", "refresh.hold", &t1)
+	c.Assert(err, check.IsNil)
+	c.Check(t1.Equal(holdTime), check.Equals, true)
 }
 
 func (s *apiSuite) makeDeveloperAPIServer(statusCode int, data string) *httptest.Server {

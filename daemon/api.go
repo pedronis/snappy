@@ -107,6 +107,7 @@ var (
 		Path:    "/v2/system-info",
 		GuestOK: true,
 		GET:     sysInfo,
+		POST:    sysCtl, // XXX other option?
 	}
 
 	loginCmd = &Command{
@@ -309,6 +310,27 @@ func sysInfo(c *Command, r *http.Request, user *auth.UserState) Response {
 		m["confinement"] = "partial"
 	} else {
 		m["confinement"] = "strict"
+	}
+
+	return SyncResponse(m, nil)
+}
+
+func sysCtl(c *Command, r *http.Request, user *auth.UserState) Response {
+	var sysCtlData struct {
+		Refresh *struct {
+			Hold string `json:"hold"`
+		} `json:"refresh"`
+	}
+
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&sysCtlData); err != nil {
+		return BadRequest("cannot decode sys control request: %v", err)
+	}
+
+	m := map[string]interface{}{}
+
+	if sysCtlData.Refresh != nil {
+		fmt.Println("REFRESH CTL REQ") // XXX
 	}
 
 	return SyncResponse(m, nil)
