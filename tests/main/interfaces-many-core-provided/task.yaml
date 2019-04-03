@@ -35,18 +35,30 @@ debug: |
     # shellcheck disable=SC2119
     get_journalctl_log
 
+    cat check.out
+
 execute: |
     #shellcheck source=tests/lib/dirs.sh
     . "$TESTSLIB"/dirs.sh
 
     # shellcheck source=tests/lib/systems.sh
     . "$TESTSLIB/systems.sh"
-    
+
     #shellcheck source=tests/lib/snaps.sh
     . "$TESTSLIB"/snaps.sh
 
     echo "Given a snap is installed"
     install_local "$CONSUMER_SNAP"
+
+    cp ./file_reachability.py "/var/snap/$CONSUMER_SNAP/common"
+
+    # capture accesses from the base AA template
+    ./file_reachability.py gen --template /snap/core/current /var/lib/snapd/apparmor/profiles/snap.test-snapd-policy-app-consumer.snapd-control templ.json 2>>warns
+
+    # test them
+    test-snapd-policy-app-consumer.snapd-control -c '$SNAP_COMMON/file_reachability.py check' <templ.json >check.out
+    # no output expected
+    ! test -s check.out
 
     echo "For each core-provided slot"
     for plugcmd in "$SNAP_MOUNT_DIR"/bin/"$CONSUMER_SNAP".* ; do
@@ -83,7 +95,24 @@ execute: |
 
         echo "Then $plugcmd should succeed"
         "$plugcmd" | MATCH PASS
+
+        echo "Check allowed files reachability"
+        ./file_reachability.py gen /snap/core/current "/var/lib/snapd/apparmor/profiles/snap.${plugcmd_bn}" checks.json 2>warns1
+        "$plugcmd" -c '$SNAP_COMMON/file_reachability.py check' <checks.json >check1.out
+
+        if [ -s warns1 ] ; then
+            echo "$plug_iface" >> warns
+            cat warns1 >> warns
+        fi
+
+        if [ -s check1.out ] ; then
+            echo "$plug_iface" >> check.out
+            cat check1.out >> check.out
+        fi
+
     done
+
+    ! test -s check.out
 
 restore: |
     # Remove the snaps to avoid timeout in next test
