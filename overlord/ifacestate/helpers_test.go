@@ -200,16 +200,17 @@ func (s *helpersSuite) TestHotplugTaskHelpers(c *C) {
 
 	ifacestate.SetHotplugAttrs(t, "iface", "key")
 
-	var key, iface string
+	var iface string
+	var key snap.HotplugKey
 	c.Assert(t.Get("hotplug-key", &key), IsNil)
-	c.Assert(key, Equals, "key")
+	c.Assert(key, DeepEquals, snap.HotplugKey("key"))
 
 	c.Assert(t.Get("interface", &iface), IsNil)
 	c.Assert(iface, Equals, "iface")
 
 	iface, key, err = ifacestate.GetHotplugAttrs(t)
 	c.Assert(err, IsNil)
-	c.Assert(key, Equals, "key")
+	c.Assert(key, DeepEquals, snap.HotplugKey("key"))
 	c.Assert(iface, Equals, "iface")
 }
 
@@ -303,7 +304,7 @@ func (s *helpersSuite) TestCheckIsSystemSnapPresentWithCore(c *C) {
 		Active:      true,
 		Sequence:    []*snap.SideInfo{sideInfo},
 		Current:     sideInfo.Revision,
-		SnapType:    string(snapInfo.Type),
+		SnapType:    string(snapInfo.GetType()),
 		InstanceKey: snapInfo.InstanceKey,
 	})
 	s.st.Unlock()
@@ -333,7 +334,7 @@ func (s *helpersSuite) TestCheckIsSystemSnapPresentWithSnapd(c *C) {
 		Active:      true,
 		Sequence:    []*snap.SideInfo{sideInfo},
 		Current:     sideInfo.Revision,
-		SnapType:    string(snapInfo.Type),
+		SnapType:    string(snapInfo.GetType()),
 		InstanceKey: snapInfo.InstanceKey,
 	})
 
@@ -452,7 +453,7 @@ func (s *helpersSuite) TestGetHotplugChangeAttrs(c *C) {
 
 	seq, key, err := ifacestate.GetHotplugChangeAttrs(chg)
 	c.Assert(err, IsNil)
-	c.Check(key, Equals, "1234")
+	c.Check(key, DeepEquals, snap.HotplugKey("1234"))
 	c.Check(seq, Equals, 7)
 }
 
@@ -508,7 +509,7 @@ func (s *helpersSuite) TestAddHotplugSeqWaitTask(c *C) {
 	seq, key, err := ifacestate.GetHotplugChangeAttrs(chg)
 	c.Assert(err, IsNil)
 	c.Check(seq, Equals, 1)
-	c.Check(key, Equals, "1234")
+	c.Check(key, DeepEquals, snap.HotplugKey("1234"))
 
 	var seqTask *state.Task
 	for _, t := range chg.Tasks() {

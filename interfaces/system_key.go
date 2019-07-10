@@ -28,6 +28,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/snapcore/snapd/cmd"
 	"github.com/snapcore/snapd/dirs"
 	"github.com/snapcore/snapd/logger"
 	"github.com/snapcore/snapd/osutil"
@@ -77,30 +78,11 @@ type systemKey struct {
 var (
 	isHomeUsingNFS  = osutil.IsHomeUsingNFS
 	mockedSystemKey *systemKey
-	osReadlink      = os.Readlink
 
 	seccompCompilerVersionInfo = seccompCompilerVersionInfoImpl
+
+	readBuildID = osutil.ReadBuildID
 )
-
-func findSnapdPath() (string, error) {
-	snapdPath := filepath.Join(dirs.DistroLibExecDir, "snapd")
-
-	// find the right snapdPath by looking if we are re-execing or not
-	exe, err := osReadlink("/proc/self/exe")
-	if err != nil {
-		return "", err
-	}
-
-	if strings.HasPrefix(exe, dirs.SnapMountDir) {
-		// reexecd' snapd may be coming from either 'core' or 'snapd'
-		// snaps, find the local prefix to the snap:
-		// /snap/snapd/123/usr/bin/snap       -> /snap/snapd/123
-		// /snap/core/234/usr/lib/snapd/snapd -> /snap/core/234
-		prefix := strings.Split(exe, "/usr/")[0]
-		return filepath.Join(prefix, "/usr/lib/snapd/snapd"), nil
-	}
-	return snapdPath, nil
-}
 
 func seccompCompilerVersionInfoImpl(path string) (string, error) {
 	compiler, err := seccomp_compiler.New(func(name string) (string, error) { return path, nil })
@@ -119,11 +101,11 @@ func generateSystemKey() (*systemKey, error) {
 	sk := &systemKey{
 		Version: 1,
 	}
-	snapdPath, err := findSnapdPath()
+	snapdPath, err := cmd.InternalToolPath("snapd")
 	if err != nil {
 		return nil, err
 	}
-	buildID, err := osutil.ReadBuildID(snapdPath)
+	buildID, err := readBuildID(snapdPath)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
