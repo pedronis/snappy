@@ -297,22 +297,10 @@ func SetRootDir(rootdir string) {
 	}
 	GlobalRootDir = rootdir
 
-	altDirDistros := []string{
-		"antergos",
-		"arch",
-		"archlinux",
-		"fedora",
-		"gentoo",
-		"manjaro",
-		"manjaro-arm",
-	}
+	// set the global root tree
+	Root = RootTreeAt(rootdir)
 
-	isInsideBase, _ := isInsideBaseSnap()
-	if !isInsideBase && release.DistroLike(altDirDistros...) {
-		SnapMountDir = filepath.Join(rootdir, "/var/lib/snapd/snap")
-	} else {
-		SnapMountDir = filepath.Join(rootdir, defaultSnapMountDir)
-	}
+	SnapMountDir = Root.SnapMount().Path
 
 	SnapDataDir = filepath.Join(rootdir, "/var/snap")
 	SnapDataHomeGlob = filepath.Join(rootdir, "/home/*/", UserHomeSnapDir)
@@ -375,7 +363,7 @@ func SetRootDir(rootdir string) {
 	SnapRollbackDir = filepath.Join(rootdir, snappyDir, "rollback")
 
 	SnapBinariesDir = filepath.Join(SnapMountDir, "bin")
-	SnapServicesDir = filepath.Join(rootdir, "/etc/systemd/system")
+	SnapServicesDir = Root.SnapServices().Path
 	SnapUserServicesDir = filepath.Join(rootdir, "/etc/systemd/user")
 	SnapSystemdConfDir = SnapSystemdConfDirUnder(rootdir)
 
