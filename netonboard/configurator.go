@@ -152,6 +152,9 @@ func (c *Configurator) SessionSetup() ([]byte, error) {
 		Algorithm: jose.HS256,
 		Key:       c.onbSecret,
 	}, sopts.WithBase64(true))
+	if err != nil {
+		return nil, fmt.Errorf("can't prepare to hash session")
+	}
 	b, err := json.Marshal(&sessionSetup{
 		SessionKey: c.sek,
 		Nonce2:     c.nonce2,

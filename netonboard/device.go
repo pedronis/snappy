@@ -93,6 +93,9 @@ func (d *Device) Device() ([]byte, error) {
 		Algorithm: jose.ES256,
 		Key:       d.onbKey,
 	}, sopts.WithBase64(true).WithHeader("m", "device"))
+	if err != nil {
+		return nil, fmt.Errorf("can't prepare for signing device")
+	}
 	b, err := json.Marshal(&device{
 		Key: &jose.JSONWebKey{
 			Key: &d.onbKey.PublicKey,
@@ -105,7 +108,7 @@ func (d *Device) Device() ([]byte, error) {
 	}
 	signed, err := devSign.Sign(b)
 	if err != nil {
-		return nil, fmt.Errorf("can't sign device: %v", err)
+		return nil, fmt.Errorf("can't sign device")
 	}
 	return []byte(signed.FullSerialize()), nil
 }
