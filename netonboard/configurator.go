@@ -99,7 +99,7 @@ func (c *Configurator) RcvDevice(b []byte) error {
 		// the onboarding device key beforehand
 		b := sig.UnsafePayloadWithoutVerification()
 		if err = json.Unmarshal(b, &dev); err != nil {
-			fmt.Errorf("can't deserialize device: %v", err)
+			return fmt.Errorf("can't deserialize device: %v", err)
 		}
 		_, err = sig.Verify(dev.Key)
 		if err != nil {
@@ -116,7 +116,7 @@ func (c *Configurator) RcvDevice(b []byte) error {
 			return fmt.Errorf("can't verify device signature: %v", err)
 		}
 		if err = json.Unmarshal(b, &dev); err != nil {
-			fmt.Errorf("can't deserialize device: %v", err)
+			return fmt.Errorf("can't deserialize device: %v", err)
 		}
 		pk, ok := dev.Key.Key.(*ecdsa.PublicKey)
 		if !ok && !cmpPK(pk, c.onbDevKey) {
