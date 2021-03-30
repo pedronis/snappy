@@ -76,6 +76,10 @@ type deviceReady struct {
 	// D can be set optionally to give upfront device information
 	// relevant to configuration
 	D map[string]interface{} `json:"d,omitempty"`
+
+	// XXX include in D or separately a list of supported
+	// configuration facets, they could look like:
+	// wifi, onboard, subiquity? or brand-foo
 }
 
 type exchg struct {
