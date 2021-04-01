@@ -42,7 +42,7 @@ type Device struct {
 	replyEnc jose.Encrypter
 }
 
-// XXX SetOnboardingSecretFromKey, generate the secret by using a KDF
+// XXX have a helper to generate the secret by using a KDF from a passphrase
 
 func (d *Device) SetOnboardingSecret(s []byte) error {
 	if len(s) != secretSize {
@@ -135,6 +135,9 @@ func (d *Device) RcvSessionSetup(b []byte) error {
 	if err != nil {
 		return fmt.Errorf("can't decrypt session")
 	}
+	// XXX we need some reasonable behavior for
+	// devices/brands/tinkerer cases where a per-device secret is
+	// not assigned/made available
 	hashed, err := jose.ParseSigned(string(b))
 	if err != nil {
 		return fmt.Errorf("can't parse session hashing")

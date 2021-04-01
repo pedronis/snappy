@@ -42,7 +42,7 @@ type Configurator struct {
 	cfgEnc jose.Encrypter
 }
 
-// XXX SetOnboardingSecretFromKey, generate the secret by using a KDF
+// XXX SetOnboardingSecretFromPassphrase, generate the secret by using a KDF
 
 func (c *Configurator) SetOnboardingSecret(s []byte) error {
 	if len(s) != secretSize {
