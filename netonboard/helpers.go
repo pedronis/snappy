@@ -20,6 +20,8 @@
 package netonboard
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"fmt"
 
 	jose "gopkg.in/square/go-jose.v2"
@@ -32,4 +34,21 @@ func genNonce() ([]byte, error) {
 		return nil, fmt.Errorf("can't generate nonce: %v", err)
 	}
 	return n, nil
+}
+
+func GenSecret() ([]byte, error) {
+	s := make([]byte, secretSize)
+	_, err := jose.RandReader.Read(s)
+	if err != nil {
+		return nil, fmt.Errorf("can't generate secret: %v", err)
+	}
+	return s, nil
+}
+
+func GenDeviceKey() (*ecdsa.PrivateKey, error) {
+	dk, err := ecdsa.GenerateKey(elliptic.P256(), jose.RandReader)
+	if err != nil {
+		return nil, fmt.Errorf("can't generate device key: %v", err)
+	}
+	return dk, nil
 }

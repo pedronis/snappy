@@ -21,11 +21,9 @@ package netonboard_test
 
 import (
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"testing"
 
 	. "gopkg.in/check.v1"
-	jose "gopkg.in/square/go-jose.v2"
 
 	"github.com/snapcore/snapd/netonboard"
 )
@@ -43,11 +41,11 @@ type protoSuite struct {
 var _ = Suite(&protoSuite{})
 
 func (s *protoSuite) SetUpSuite(c *C) {
-	s.onbs = make([]byte, 32)
-	_, err := jose.RandReader.Read(s.onbs)
+	onbs, err := netonboard.GenSecret()
 	c.Assert(err, IsNil)
+	s.onbs = onbs
 
-	onbDevKey, err := ecdsa.GenerateKey(elliptic.P256(), jose.RandReader)
+	onbDevKey, err := netonboard.GenDeviceKey()
 	c.Assert(err, IsNil)
 	s.onbDevKey = onbDevKey
 }
