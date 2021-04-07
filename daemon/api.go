@@ -77,6 +77,10 @@ var api = []*Command{
 	validationSetsCmd,
 	routineConsoleConfStartCmd,
 	systemRecoveryKeysCmd,
+	// onboarding spike
+	onboardingInfoCmd,
+	onboardingSecretsCmd,
+	onboardingSessionCmd,
 }
 
 // userFromRequest extracts user information from request and return the respective user in state, if valid
