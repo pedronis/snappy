@@ -92,6 +92,8 @@ type exchg struct {
 	D map[string]interface{} `json:"d"`
 }
 
+// XXX do we need some support for keep alive messages?
+
 type notification struct {
 }
 
