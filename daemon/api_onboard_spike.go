@@ -208,10 +208,14 @@ func postOnboardSession(c *Command, r *http.Request, user *auth.UserState) Respo
 type onboardSession struct {
 	proto *netonboard.Device
 
-	exchange int
+	exchange    int
+	replyingFor int
 }
 
 func (s *onboardSession) handle(msg []byte) Response {
+	if s.replyingFor != 0 {
+		return InternalError("XXX build a fatal error: replying to previous message")
+	}
 	var in map[string]interface{}
 	var answerType string
 	if s.exchange == 0 {
@@ -234,6 +238,7 @@ func (s *onboardSession) handle(msg []byte) Response {
 	// something like an "onboard": params directive would switch to
 	// the actual onboarding, tryign network config...
 	// XXX here we can start a Change mapped to the exchange if needed
+	s.replyingFor = s.exchange
 	return onboardExchangeResponse(answerType, s.exchange, in)
 }
 
@@ -250,6 +255,10 @@ func onboardExchangeResponse(msgType string, exchange int, d map[string]interfac
 }
 
 func (s *onboardSession) reply(exchange string, d map[string]interface{}) Response {
+	exchg, _ := strconv.Atoi(exchange)
+	if exchg == 0 || exchg != s.replyingFor {
+		return InternalError("XXX build a fatal error: mismatched exchange")
+	}
 	// XXX if Change is not done return an Exchange-set response again
 	// XXX combine d with our own results
 	var answerType string
@@ -266,6 +275,7 @@ func (s *onboardSession) reply(exchange string, d map[string]interface{}) Respon
 	if err != nil {
 		return InternalError("XXX build a fatal error to send back")
 	}
+	s.replyingFor = 0
 	return SyncResponse(&netonboard.OnboardSessionResponse{
 		MsgType: answerType,
 		Msg:     msg,
