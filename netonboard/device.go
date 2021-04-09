@@ -38,6 +38,9 @@ type Device struct {
 	nonce2    []byte
 	sek       []byte
 
+	seq         int
+	receivedSeq int
+
 	ready    bool
 	replyEnc jose.Encrypter
 }
@@ -178,7 +181,9 @@ func (d *Device) Ready(data map[string]interface{}) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	d.seq++
 	b, err := json.Marshal(&deviceReady{
+		Seq:    d.seq,
 		Nonce1: d.nonce1,
 		D:      data,
 	})
@@ -221,6 +226,10 @@ func (d *Device) RcvCfg(b []byte) (map[string]interface{}, error) {
 	if err := json.Unmarshal(b, &exchg); err != nil {
 		return nil, fmt.Errorf("can't deserialize cfg")
 	}
+	d.receivedSeq++
+	if exchg.Seq != d.receivedSeq {
+		return nil, fmt.Errorf("out of sequence cfg")
+	}
 	d.ready = true
 	return exchg.D, nil
 }
@@ -236,8 +245,10 @@ func (d *Device) Reply(data map[string]interface{}) ([]byte, error) {
 		}
 		d.replyEnc = enc
 	}
+	d.seq++
 	b, err := json.Marshal(&exchg{
-		D: data,
+		Seq: d.seq,
+		D:   data,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("can't serialize reply")

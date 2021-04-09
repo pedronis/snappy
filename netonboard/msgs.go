@@ -71,6 +71,9 @@ type deviceReady struct {
 	// Good point just before replying with this to start
 	// signaling visually that the device is fully engaged being configured
 
+	// Seq must be 1
+	Seq int `json:"sq"`
+
 	Nonce1 []byte `json:"n1"`
 
 	// D can be set optionally to give upfront device information
@@ -87,6 +90,11 @@ type exchg struct {
 	// M is reply if from device to configurator
 	// XXX need a way to split these into multiple messages if they
 	// are too big
+
+	// Seq is the message sequence number
+	// ready gets 1, first reply gets 2, then 3 etc
+	// first cfg gets 1, 2nd cfg gets 2, etc
+	Seq int `json:"sq"`
 
 	// D is for directives or data
 	D map[string]interface{} `json:"d"`

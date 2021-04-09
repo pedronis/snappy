@@ -38,6 +38,9 @@ type Configurator struct {
 	nonce2    []byte
 	sek       []byte
 
+	receivedSeq int
+	seq         int
+
 	ready  bool
 	cfgEnc jose.Encrypter
 }
@@ -215,6 +218,10 @@ func (c *Configurator) RcvReady(b []byte) (map[string]interface{}, error) {
 	if !bytes.Equal(c.nonce1, deviceReady.Nonce1) {
 		return nil, fmt.Errorf("device didn't reply ready with correct nonce")
 	}
+	c.receivedSeq++
+	if deviceReady.Seq != c.receivedSeq || c.receivedSeq != 1 {
+		return nil, fmt.Errorf("out of sequence ready")
+	}
 	c.ready = true
 	return deviceReady.D, nil
 }
@@ -246,8 +253,10 @@ func (c *Configurator) Cfg(directives map[string]interface{}) ([]byte, error) {
 		}
 		c.cfgEnc = enc
 	}
+	c.seq++
 	b, err := json.Marshal(&exchg{
-		D: directives,
+		Seq: c.seq,
+		D:   directives,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("can't serialize cfg")
@@ -267,6 +276,10 @@ func (c *Configurator) RcvReply(b []byte) (map[string]interface{}, error) {
 	var exchg exchg
 	if err := json.Unmarshal(b, &exchg); err != nil {
 		return nil, fmt.Errorf("can't deserialize reply")
+	}
+	c.receivedSeq++
+	if exchg.Seq != c.receivedSeq {
+		return nil, fmt.Errorf("out of sequence reply")
 	}
 	return exchg.D, nil
 }
