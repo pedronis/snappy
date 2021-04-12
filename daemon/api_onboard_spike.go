@@ -212,9 +212,13 @@ type onboardSession struct {
 	replyingFor int
 }
 
+// XXX on error reset onboarding state/session
+// have a session timeout
+// have possibly a session rate limit?
+
 func (s *onboardSession) handle(msg []byte) Response {
 	if s.replyingFor != 0 {
-		return InternalError("XXX build a fatal error: replying to previous message")
+		return InternalError("XXX build a fatal error: still replying to previous message")
 	}
 	var in map[string]interface{}
 	var answerType string
