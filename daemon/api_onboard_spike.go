@@ -178,11 +178,11 @@ func postOnboardSession(c *Command, r *http.Request, user *auth.UserState) Respo
 			return InternalError("%v", err)
 		}
 		if err := sess.proto.RcvHello(act.Msg); err != nil {
-			return InternalError("XXX build a fatal error to send back")
+			return handleOnboardError(err)
 		}
 		device, err := sess.proto.Device()
 		if err != nil {
-			return InternalError("XXX build a fatal error to send back")
+			return handleOnboardError(err)
 		}
 		onbst.InProgress = true
 		setOnboardState(st, onbst)
@@ -194,12 +194,31 @@ func postOnboardSession(c *Command, r *http.Request, user *auth.UserState) Respo
 		if sess == nil {
 			return BadRequest("no current onboarding session")
 		}
-		return sess.handle(act.Msg)
+		rsp, noError := sess.handle(act.Msg)
+		if !noError {
+			// if there's an error handling a message from
+			// the configurator we clear the session
+			// automatically, it's also possible to use
+			// action fatal to do that
+			clearSession(st, onbst)
+		}
+		return rsp
 	case "reply":
 		if sess == nil {
 			return BadRequest("no current onboarding session")
 		}
 		return sess.reply(act.Exchange, act.D)
+	case "fatal":
+		if sess == nil {
+			return BadRequest("no current onboarding session")
+		}
+		oe := &netonboard.Error{
+			Code: act.FatalCode,
+			Msg:  act.FatalMsg,
+		}
+		resp := buildFatalResponse(oe, 200)
+		clearSession(st, onbst)
+		return resp
 	default:
 		return BadRequest("unknown session action %q", act.Action)
 	}
@@ -212,20 +231,19 @@ type onboardSession struct {
 	replyingFor int
 }
 
-// XXX on error reset onboarding state/session
-// have a session timeout
-// have possibly a session rate limit?
+// XXX have a session timeout
+// XXX have possibly a session rate limit?
 
-func (s *onboardSession) handle(msg []byte) Response {
+func (s *onboardSession) handle(msg []byte) (rsp Response, noError bool) {
 	if s.replyingFor != 0 {
-		return InternalError("XXX build a fatal error: still replying to previous message")
+		return BadRequest("still replying to previous message"), false
 	}
 	var in map[string]interface{}
 	var answerType string
 	if s.exchange == 0 {
 		err := s.proto.RcvSessionSetup(msg)
 		if err != nil {
-			return InternalError("XXX build a fatal error to send back")
+			return handleOnboardError(err), false
 		}
 		answerType = "ready"
 		s.exchange = 1
@@ -233,7 +251,7 @@ func (s *onboardSession) handle(msg []byte) Response {
 		var err error
 		in, err = s.proto.RcvCfg(msg)
 		if err != nil {
-			return InternalError("XXX build a fatal error to send back")
+			return handleOnboardError(err), false
 		}
 		answerType = "reply"
 		s.exchange += 1
@@ -243,7 +261,7 @@ func (s *onboardSession) handle(msg []byte) Response {
 	// the actual onboarding, tryign network config...
 	// XXX here we can start a Change mapped to the exchange if needed
 	s.replyingFor = s.exchange
-	return onboardExchangeResponse(answerType, s.exchange, in)
+	return onboardExchangeResponse(answerType, s.exchange, in), true
 }
 
 func onboardExchangeResponse(msgType string, exchange int, d map[string]interface{}) Response {
@@ -261,7 +279,7 @@ func onboardExchangeResponse(msgType string, exchange int, d map[string]interfac
 func (s *onboardSession) reply(exchange string, d map[string]interface{}) Response {
 	exchg, _ := strconv.Atoi(exchange)
 	if exchg == 0 || exchg != s.replyingFor {
-		return InternalError("XXX build a fatal error: mismatched exchange")
+		return BadRequest("mismatched exchange")
 	}
 	// XXX if Change is not done return an Exchange-set response again
 	// XXX combine d with our own results
@@ -277,13 +295,54 @@ func (s *onboardSession) reply(exchange string, d map[string]interface{}) Respon
 	}
 	msg, err := buildMsg(d)
 	if err != nil {
-		return InternalError("XXX build a fatal error to send back")
+		return handleOnboardError(err)
 	}
 	s.replyingFor = 0
 	return SyncResponse(&netonboard.OnboardSessionResponse{
 		MsgType: answerType,
 		Msg:     msg,
 	}, nil)
+}
+
+func buildFatalResponse(oe *netonboard.Error, status int) Response {
+	f, err := netonboard.Fatal(oe)
+	if err != nil {
+		return InternalError(err.Error())
+	}
+	res := &errorResult{
+		Message: oe.Msg,
+		Kind:    netonboard.ErrorKindFatal,
+		Value: netonboard.ErrorValue{
+			Fatal: f,
+		},
+	}
+	return &resp{
+		Type:   ResponseTypeError,
+		Result: res,
+		Status: status,
+	}
+}
+
+func handleOnboardError(e error) Response {
+	switch oe := e.(type) {
+	case *netonboard.Error:
+		return buildFatalResponse(oe, 400)
+	case netonboard.FatalError:
+		res := &errorResult{
+			Message: oe.Err.Msg,
+			Kind:    netonboard.ErrorKindFatalReceived,
+			Value: netonboard.ErrorValue{
+				Code: oe.Err.Code,
+			},
+		}
+		return &resp{
+			Type:   ResponseTypeError,
+			Result: res,
+			Status: 400,
+		}
+	default:
+		return InternalError(e.Error())
+	}
 }
 
 type onboardSessionKey struct{}
@@ -307,6 +366,12 @@ func setupSession(st *state.State, onbst *onboardState) (*onboardSession, error)
 	}
 	st.Cache(onboardSessionKey{}, sess)
 	return sess, nil
+}
+
+func clearSession(st *state.State, onbst *onboardState) {
+	onbst.InProgress = false
+	setOnboardState(st, onbst)
+	st.Cache(onboardSessionKey{}, nil)
 }
 
 func getSession(st *state.State) *onboardSession {

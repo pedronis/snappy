@@ -24,9 +24,12 @@ package netonboard
 
 import (
 	jose "gopkg.in/square/go-jose.v2"
+
+	"github.com/snapcore/snapd/client"
 )
 
 type OnboardInfo struct {
+	// XXX network connectivity info
 	Onboarded  bool `json:"onboarded"`
 	InProgress bool `json:"in-progress"`
 }
@@ -44,6 +47,10 @@ type OnboardSessionAction struct {
 	// Fields for reply action.
 	Exchange string                 `json:"exchange,omitempty"`
 	D        map[string]interface{} `json:"d,omitempty"`
+
+	// Fields for fatal action.
+	FatalCode ErrorCode `json:"fatal-code,omitempty"`
+	FatalMsg  string    `json:"fatal-msg,omitempty"`
 }
 
 type OnboardSessionResponse struct {
@@ -61,4 +68,14 @@ type OnboardSessionResponse struct {
 	Exchange string `json:"exchange,omitempty"`
 
 	D map[string]interface{} `json:"d,omitempty"`
+}
+
+const (
+	ErrorKindFatal         client.ErrorKind = "netonboard-fatal"
+	ErrorKindFatalReceived client.ErrorKind = "netonboard-fatal-received"
+)
+
+type ErrorValue struct {
+	Code  ErrorCode `json:"code,omitempty"`
+	Fatal []byte    `json:"fatal,omitempty"`
 }
