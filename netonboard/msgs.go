@@ -20,6 +20,8 @@
 package netonboard
 
 import (
+	"fmt"
+
 	jose "gopkg.in/square/go-jose.v2"
 )
 
@@ -109,6 +111,56 @@ type notification struct {
 
 type fatal struct {
 	// M is fatal
-	Code string `json:"code"`
+	M string `json:"m"`
+
+	Code int    `json:"code"`
 	Msg  string `json:"msg"`
+}
+
+type ErrorCode int
+
+const (
+	InternalErrorCode ErrorCode = iota + 1
+	ProtocolErrorCode
+	InvalidMsgCode
+	InvalidEncryptedMsgCode
+	InvalidSecretOrMsgSignatureCode
+	InvalidDeviceKeyOrMsgSignatureCode
+	UnknownCode
+)
+
+type Error struct {
+	Code ErrorCode
+	Msg  string
+}
+
+func (e *Error) Error() string {
+	return fmt.Sprintf("%s (%d)", e.Msg, e.Code)
+}
+
+func errorMaker(code ErrorCode) func(msgFmt string, v ...interface{}) *Error {
+	return func(msgFmt string, v ...interface{}) *Error {
+		return &Error{
+			Code: code,
+			Msg:  fmt.Sprintf(msgFmt, v...),
+		}
+	}
+}
+
+var (
+	internal                       = errorMaker(InternalErrorCode)
+	invalidMsg                     = errorMaker(InvalidMsgCode)
+	invalidEncryptedMsg            = errorMaker(InvalidEncryptedMsgCode)
+	invalidSecretOrMsgSignature    = errorMaker(InvalidSecretOrMsgSignatureCode)
+	invalidDeviceKeyOrMsgSignature = errorMaker(InvalidDeviceKeyOrMsgSignatureCode)
+	protocol                       = errorMaker(ProtocolErrorCode)
+)
+
+// FatalError represents when the counterparty sent back a fatal message.
+type FatalError struct {
+	Err *Error
+}
+
+func (fe FatalError) Error() string {
+	return fe.Err.Error()
 }

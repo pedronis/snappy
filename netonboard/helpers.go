@@ -22,6 +22,7 @@ package netonboard
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"encoding/json"
 	"fmt"
 
 	jose "gopkg.in/square/go-jose.v2"
@@ -51,4 +52,43 @@ func GenDeviceKey() (*ecdsa.PrivateKey, error) {
 		return nil, fmt.Errorf("can't generate device key: %v", err)
 	}
 	return dk, nil
+}
+
+func Fatal(e error) ([]byte, error) {
+	// refuse to send back a fatalerror
+	if _, ok := e.(FatalError); ok {
+		return nil, e
+	}
+	noe, ok := e.(*Error)
+	if !ok {
+		noe = &Error{
+			Code: InternalErrorCode,
+			Msg:  e.Error(),
+		}
+	}
+	b, err := json.Marshal(&fatal{
+		M:    "fatal",
+		Code: int(noe.Code),
+		Msg:  noe.Msg,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("can't serialize fatal message")
+	}
+	return b, nil
+}
+
+func parseFatal(b []byte, invalidFmt string, v ...interface{}) error {
+	var f fatal
+	err := json.Unmarshal(b, &f)
+	if err != nil || f.M != "fatal" {
+		return invalidMsg(invalidFmt, v...)
+	}
+	code := ErrorCode(f.Code)
+	if code < InternalErrorCode || code >= UnknownCode {
+		code = UnknownCode
+	}
+	return FatalError{Err: &Error{
+		Code: code,
+		Msg:  f.Msg,
+	}}
 }

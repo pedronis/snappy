@@ -188,3 +188,93 @@ func (s *protoSuite) TestCfgReply(c *C) {
 		"list": []interface{}{"a", "b", "c"},
 	})
 }
+
+func (s *protoSuite) TestFatalInsteadOfDevice(c *C) {
+	hello, err := s.cftor.Hello()
+	c.Assert(err, IsNil)
+	s.dump(c, hello)
+
+	e := &netonboard.Error{
+		Code: netonboard.ProtocolErrorCode,
+		Msg:  "bad nonce",
+	}
+	f, err := netonboard.Fatal(e)
+	c.Assert(err, IsNil)
+	s.dump(c, f)
+
+	err = s.cftor.RcvDevice(f)
+	c.Assert(err, DeepEquals, netonboard.FatalError{Err: e})
+
+	// wouldn't be sent back again
+	b, err2 := netonboard.Fatal(err)
+	c.Check(b, IsNil)
+	c.Check(err2, Equals, err)
+}
+
+func (s *protoSuite) TestFatalInsteadOfSessionSetup(c *C) {
+	err := s.cftor.SetOnboardingSecret(s.onbs)
+	c.Assert(err, IsNil)
+	err = s.cftor.SetOnboardingDeviceKey(&s.onbDevKey.PublicKey)
+	c.Assert(err, IsNil)
+
+	hello, err := s.cftor.Hello()
+	c.Assert(err, IsNil)
+	s.dump(c, hello)
+
+	err = s.dev.RcvHello(hello)
+	c.Assert(err, IsNil)
+
+	dev, err := s.dev.Device()
+	c.Assert(err, IsNil)
+	s.dump(c, dev)
+
+	e := &netonboard.Error{
+		Code: netonboard.InvalidDeviceKeyOrMsgSignatureCode,
+		Msg:  "can't verify device signature",
+	}
+	f, err := netonboard.Fatal(e)
+	c.Assert(err, IsNil)
+	s.dump(c, f)
+
+	err = s.dev.RcvSessionSetup(f)
+	c.Assert(err, DeepEquals, netonboard.FatalError{Err: e})
+}
+
+func (s *protoSuite) TestFatalInsteadOfReady(c *C) {
+	s.setupSession(c)
+
+	e := &netonboard.Error{
+		Code: netonboard.InvalidSecretOrMsgSignatureCode,
+		Msg:  "can't verify session against secret",
+	}
+	f, err := netonboard.Fatal(e)
+	c.Assert(err, IsNil)
+	s.dump(c, f)
+
+	d, err := s.cftor.RcvReady(f)
+	c.Assert(err, DeepEquals, netonboard.FatalError{Err: e})
+	c.Check(d, HasLen, 0)
+}
+
+func (s *protoSuite) TestFatalInsteadOfCfg(c *C) {
+	s.setupSession(c)
+
+	rdy, err := s.dev.Ready(nil)
+	c.Assert(err, IsNil)
+
+	d, err := s.cftor.RcvReady(rdy)
+	c.Assert(err, IsNil)
+
+	e := &netonboard.Error{
+		Code: netonboard.ProtocolErrorCode,
+		Msg:  "bad message",
+	}
+	f, err := netonboard.Fatal(e)
+	c.Assert(err, IsNil)
+	s.dump(c, f)
+
+	d, err = s.dev.RcvCfg(f)
+	c.Assert(err, DeepEquals, netonboard.FatalError{Err: e})
+	c.Check(d, HasLen, 0)
+
+}

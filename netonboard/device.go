@@ -66,13 +66,13 @@ func (d *Device) SetOnboardingDeviceKey(k *ecdsa.PrivateKey) error {
 func (d *Device) RcvHello(b []byte) error {
 	var hello hello
 	if err := json.Unmarshal(b, &hello); err != nil {
-		return fmt.Errorf("can deserialize hello: %v", err)
+		return invalidMsg("can't deserialize hello: %v", err)
 	}
 	if hello.M != "hello" {
-		return fmt.Errorf("expected hello")
+		return protocol("expected hello")
 	}
 	if len(hello.Nonce1) != nonceSize {
-		return fmt.Errorf("nonce1 has the wrong size")
+		return protocol("nonce1 has the wrong size")
 	}
 	d.nonce1 = hello.Nonce1
 	return nil
@@ -80,10 +80,10 @@ func (d *Device) RcvHello(b []byte) error {
 
 func (d *Device) Device() ([]byte, error) {
 	if d.onbKey == nil {
-		return nil, fmt.Errorf("onboarding device key must be set")
+		return nil, internal("onboarding device key must be set")
 	}
 	if d.nonce1 == nil {
-		return nil, fmt.Errorf("nonce1 must have been received")
+		return nil, protocol("nonce1 must have been received")
 	}
 	nonce2, err := genNonce()
 	if err != nil {
@@ -97,7 +97,7 @@ func (d *Device) Device() ([]byte, error) {
 		Key:       d.onbKey,
 	}, sopts.WithBase64(true).WithHeader("m", "device"))
 	if err != nil {
-		return nil, fmt.Errorf("can't prepare for signing device")
+		return nil, internal("can't prepare for signing device")
 	}
 	b, err := json.Marshal(&device{
 		Key: &jose.JSONWebKey{
@@ -107,54 +107,53 @@ func (d *Device) Device() ([]byte, error) {
 		Nonce2: nonce2,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("can't serialize device: %v", err)
+		return nil, internal("can't serialize device: %v", err)
 	}
 	signed, err := devSign.Sign(b)
 	if err != nil {
-		return nil, fmt.Errorf("can't sign device")
+		return nil, internal("can't sign device")
 	}
 	return []byte(signed.FullSerialize()), nil
 }
 
 func (d *Device) RcvSessionSetup(b []byte) error {
 	if d.onbSecret == nil {
-		return fmt.Errorf("onboarding secret must be set")
+		return internal("onboarding secret must be set")
 	}
 	if d.onbKey == nil {
-		return fmt.Errorf("onboarding device key must be set")
+		return internal("onboarding device key must be set")
 	}
 	if d.nonce2 == nil {
-		return fmt.Errorf("nonce2 must have been sent")
+		return internal("nonce2 must have been sent")
 	}
 	encrypted, err := jose.ParseEncrypted(string(b))
 	if err != nil {
-		// XXX maybe fatal instead
-		return fmt.Errorf("can't parse session")
+		return parseFatal(b, "can't parse session")
 	}
 	if encrypted.Header.ExtraHeaders["m"] != "session" {
-		return fmt.Errorf("expected session")
+		return protocol("expected session")
 	}
 	b, err = encrypted.Decrypt(d.onbKey)
 	if err != nil {
-		return fmt.Errorf("can't decrypt session")
+		return invalidEncryptedMsg("can't decrypt session")
 	}
 	// XXX we need some reasonable behavior for
 	// devices/brands/tinkerer cases where a per-device secret is
 	// not assigned/made available
 	hashed, err := jose.ParseSigned(string(b))
 	if err != nil {
-		return fmt.Errorf("can't parse session hashing")
+		return invalidMsg("can't parse session hashing")
 	}
 	b, err = hashed.Verify(d.onbSecret)
 	if err != nil {
-		return fmt.Errorf("can't verify session against onboarding secret")
+		return invalidSecretOrMsgSignature("can't verify session against onboarding secret")
 	}
 	var sessionSetup sessionSetup
 	if err := json.Unmarshal(b, &sessionSetup); err != nil {
-		return fmt.Errorf("can't deserialize session")
+		return invalidMsg("can't deserialize session")
 	}
 	if !bytes.Equal(d.nonce2, sessionSetup.Nonce2) {
-		return fmt.Errorf("configurator didn't sign correct nonce")
+		return protocol("configurator didn't sign correct nonce")
 	}
 	d.sek = sessionSetup.SessionKey
 	return nil
@@ -162,7 +161,7 @@ func (d *Device) RcvSessionSetup(b []byte) error {
 
 func (d *Device) sessEnc(m string) (jose.Encrypter, error) {
 	if d.sek == nil {
-		return nil, fmt.Errorf("session key must have been received")
+		return nil, protocol("session key must have been received")
 	}
 	rcpt := jose.Recipient{
 		Algorithm: jose.DIRECT,
@@ -171,7 +170,7 @@ func (d *Device) sessEnc(m string) (jose.Encrypter, error) {
 	eopts := &jose.EncrypterOptions{}
 	enc, err := jose.NewEncrypter(contEnc, rcpt, eopts.WithHeader("m", m))
 	if err != nil {
-		return nil, fmt.Errorf("can't prepare session key encryption")
+		return nil, internal("can't prepare session key encryption")
 	}
 	return enc, nil
 }
@@ -188,31 +187,29 @@ func (d *Device) Ready(data map[string]interface{}) ([]byte, error) {
 		D:      data,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("can't serialize ready")
+		return nil, internal("can't serialize ready")
 	}
 	encrypted, err := enc.Encrypt(b)
 	if err != nil {
-		return nil, fmt.Errorf("can't encrypt ready")
+		return nil, internal("can't encrypt ready")
 	}
 	return []byte(encrypted.FullSerialize()), nil
 }
 
 func (d *Device) sessDecrypt(b []byte, m string) ([]byte, error) {
 	if d.sek == nil {
-		return nil, fmt.Errorf("session key must have been received")
+		return nil, protocol("session key must have been received")
 	}
 	encrypted, err := jose.ParseEncrypted(string(b))
 	if err != nil {
-		// XXX maybe fatal instead
-		return nil, fmt.Errorf("can't parse %s", m)
+		return nil, parseFatal(b, "can't parse %s", m)
 	}
 	if encrypted.Header.ExtraHeaders["m"] != m {
-		// XXX maybe fatal instead
-		return nil, fmt.Errorf("expected %s", m)
+		return nil, protocol("expected %s", m)
 	}
 	b, err = encrypted.Decrypt(d.sek)
 	if err != nil {
-		return nil, fmt.Errorf("can't decrypt %s", m)
+		return nil, invalidEncryptedMsg("can't decrypt %s", m)
 	}
 	return b, nil
 }
@@ -224,11 +221,11 @@ func (d *Device) RcvCfg(b []byte) (map[string]interface{}, error) {
 	}
 	var exchg exchg
 	if err := json.Unmarshal(b, &exchg); err != nil {
-		return nil, fmt.Errorf("can't deserialize cfg")
+		return nil, invalidMsg("can't deserialize cfg")
 	}
 	d.receivedSeq++
 	if exchg.Seq != d.receivedSeq {
-		return nil, fmt.Errorf("out of sequence cfg")
+		return nil, protocol("out of sequence cfg")
 	}
 	d.ready = true
 	return exchg.D, nil
@@ -236,7 +233,7 @@ func (d *Device) RcvCfg(b []byte) (map[string]interface{}, error) {
 
 func (d *Device) Reply(data map[string]interface{}) ([]byte, error) {
 	if !d.ready {
-		return nil, fmt.Errorf("must have received cfg")
+		return nil, protocol("must have received cfg")
 	}
 	if d.replyEnc == nil {
 		enc, err := d.sessEnc("reply")
@@ -251,11 +248,11 @@ func (d *Device) Reply(data map[string]interface{}) ([]byte, error) {
 		D:   data,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("can't serialize reply")
+		return nil, internal("can't serialize reply")
 	}
 	encrypted, err := d.replyEnc.Encrypt(b)
 	if err != nil {
-		return nil, fmt.Errorf("can't encrypt reply")
+		return nil, internal("can't encrypt reply")
 	}
 	return []byte(encrypted.FullSerialize()), nil
 }
