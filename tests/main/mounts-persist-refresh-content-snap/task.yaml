@@ -8,6 +8,8 @@ details: |
   disappeared like this (other snaps would misbehave but would not crash as fatally as
   the firefox snap). See launchpad bug https://bugs.launchpad.net/snapd/+bug/1945697 for
   full details.
+  Check that contents is present as expected as prerequisites, and that
+  it might get partially updated if nedeed.
 
 systems:
   - -ubuntu-14.04-* # no support for tests.session
@@ -22,13 +24,19 @@ prepare: |
   systemctl restart snapd
 
   # install a snap which exposes some files via a content slot
-  "$TESTSTOOLS"/snaps-state install-local test-snapd-content-slot
+  "$TESTSTOOLS"/snaps-state install-local test-platform-content
 
   # install a snap which consumes said files via content plug
-  "$TESTSTOOLS"/snaps-state install-local test-snapd-desktop-layout-with-content
+  mkdir test-desktop-layout-with-content/gnome-platform
+  "$TESTSTOOLS"/snaps-state install-local test-desktop-layout-with-content
 
   # connect
-  snap connect test-snapd-desktop-layout-with-content:shared-content-plug test-snapd-content-slot:shared-content-slot
+  snap connect test-desktop-layout-with-content:shared-content-plug test-platform-content:shared-content-slot
+
+  # validate namespace
+  snap run --shell test-desktop-layout-with-content.cmd -c 'test -f /usr/lib/x86_64-linux-gnu/webkit2gtk-4.0/WebKitA'
+  snap run --shell test-desktop-layout-with-content.cmd -c 'test -f /usr/share/libdrm/LIBDRM'
+  snap run --shell test-desktop-layout-with-content.cmd -c 'test -f /usr/share/xml/iso-codes/ISO-CODES'
 
   # prepare a user session
   tests.session -u test prepare
@@ -40,13 +48,15 @@ execute: |
   # while loop here has to be inside the snap run shell, since the process must
   # persist during the refresh, if it is on the outside the mount namespace will
   # be rebuilt and the crash will not be reproduced
-  tests.session -u test exec snap run --shell test-snapd-desktop-layout-with-content.cmd -c 'while test -f /run/keep-running && test -d /usr/share/fonts/foo-font; do true; done' &
+  tests.session -u test exec snap run --shell test-desktop-layout-with-content.cmd -c 'while test -f /run/keep-running && test -d /usr/share/fonts/foo-font && test -f /usr/lib/x86_64-linux-gnu/webkit2gtk-4.0/WebKitA; do true; done' &
   pid=$!
 
-  # refresh the content slot snap
+  # refresh the content slot snap with one more file
+  touch test-platform-content/usr/lib/x86_64-linux-gnu/webkit2gtk-4.0/WebKitB
   # TODO: when refresh app awareness is enabled, this will need to ignore running processes to
   # check the behavior
-  "$TESTSTOOLS"/snaps-state install-local test-snapd-content-slot
+  rm test-platform-content/*.snap
+  "$TESTSTOOLS"/snaps-state install-local test-platform-content
 
   # ensure the process is still running
   if not ps -p "$pid"; then
@@ -58,3 +68,10 @@ execute: |
   rm /run/keep-running
 
   wait "$pid" || true
+
+  # revalidate namespace
+  snap run --shell test-desktop-layout-with-content.cmd -c 'test -f /usr/lib/x86_64-linux-gnu/webkit2gtk-4.0/WebKitA'
+  snap run --shell test-desktop-layout-with-content.cmd -c 'test -f /usr/share/libdrm/LIBDRM'
+  snap run --shell test-desktop-layout-with-content.cmd -c 'test -f /usr/share/xml/iso-codes/ISO-CODES'
+  # XXX this fails
+  snap run --shell test-desktop-layout-with-content.cmd -c 'test -f /usr/lib/x86_64-linux-gnu/webkit2gtk-4.0/WebKitB'

@@ -1,4 +1,4 @@
-name: test-snapd-desktop-layout-with-content
+name: test-desktop-layout-with-content
 version: 0.1
 
 apps:
@@ -11,8 +11,8 @@ plugs:
   shared-content-plug:
     interface: content
     target: $SNAP/gnome-platform
-    content: mylib
-    default-provider: test-snapd-content-slot
+    content: myplat
+    default-provider: test-platform-content
 
 layout:
   /usr/share/libdrm:
