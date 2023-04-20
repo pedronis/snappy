@@ -40,6 +40,8 @@ func SeedDatePid() int64 {
 	return time.Now().UnixNano() + int64(os.Getpid())
 }
 
+var sharedSeed = SeedDatePid()
+
 // SeedDatePidHostMac provides a seed value that in addition to
 // time and os PID, also takes into account the device hostname
 // and network inteface MAC addresses. This may be required when
@@ -49,7 +51,7 @@ func SeedDatePid() int64 {
 func SeedDatePidHostMac() int64 {
 	// Use a pseudo RNG initially for time and pid inclusion
 	var b [8]byte
-	pr := NewPseudoRand(SeedDatePid())
+	pr := NewPseudoRand(nil)
 	pr.rand.Read(b[:])
 
 	h := sha256.New224()
@@ -76,8 +78,17 @@ type PseudoRand struct {
 	lk   sync.Mutex
 }
 
-// NewPseudoRand returns a new pseudo RNG instance.
-func NewPseudoRand(seed int64) *PseudoRand {
+// SeedFunc can compute a pseudo RNG seed value.
+type SeedFunc func() int64
+
+// NewPseudoRand returns a new pseudo RNG instance. The initial
+// seed is computed invoking seeder, if seeder is nil a value
+// based on SeedDatePid is used.
+func NewPseudoRand(seeder SeedFunc) *PseudoRand {
+	var seed = sharedSeed
+	if seeder != nil {
+		seed = seeder()
+	}
 	return &PseudoRand{rand: rand.New(rand.NewSource(seed))}
 }
 

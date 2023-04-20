@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/snapcore/snapd/osutil/sys"
-	"github.com/snapcore/snapd/randutil"
 	"github.com/snapcore/snapd/strutil"
 	"github.com/snapcore/snapd/testutil"
 )
@@ -242,6 +241,4 @@ func ParseRawExpandableEnv(entries []string) (ExpandableEnv, error) {
 }
 
 // Make the private prng accessible for tests
-func AtomicFilePrng() *randutil.PseudoRand {
-	return atomicFilePrng
-}
+var AtomicFilePrng = atomicFilePrng
