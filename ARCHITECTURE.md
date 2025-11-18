@@ -27,7 +27,7 @@ When run, `snap-confine` uses *capabilities (in the kernel sense)* to perform th
 
 *See also the overlord package  [README](https://github.com/canonical/snapd/blob/master/overlord/README.md).*
 
-snapd execution is orchestrated by [`overlord.Overlord`](https://pkg.go.dev/github.com/snapcore/snapd/overlord#Overlord) and the *state managers* under it. These are initialized and driven by `Overlord`  via the `StateManage`r interface.
+snapd execution is orchestrated by [`overlord.Overlord`](https://pkg.go.dev/github.com/snapcore/snapd/overlord#Overlord) and the *state managers* under it. These are initialized and driven by `Overlord`  via the [`StateManager`](https://pkg.go.dev/github.com/snapcore/snapd/overlord#StateManager) interface.
 
 Execution comprises of:
 
@@ -36,7 +36,7 @@ Execution comprises of:
 * each iteration of the ensure loop calls the `StateManager.Ensure` methods for all the state managers  
 * on shutdown, the `StateManager.Stop` method is called on all state managers
 
-`The StateManager.Ensure` methods implement small state machines that first  check if any transition requiring a system change is necessary and secondly set up the corresponding change. The regular querying of the store and snap updates are implemented in this way, for example.
+The `StateManager.Ensure` methods implement small state machines that first  check if any transition requiring a system change is necessary and secondly set up the corresponding change. The regular querying of the store and snap updates are implemented in this way, for example.
 
 Any system change operation is realized as a set and dependency graph of tasks. Each state manager implements different sets of *task kinds*, with each responsible for a relatively orthogonal set of concerns and behaviors. The graph and tasks are realized as [`state.Change`](https://pkg.go.dev/github.com/snapcore/snapd/overlord/state#Change) and [`state.Task`](https://pkg.go.dev/github.com/snapcore/snapd/overlord/state#Task), which are persisted to survive reboots and restarts. [`state.TaskRunner`](https://pkg.go.dev/github.com/snapcore/snapd/overlord/state#TaskRunner) is the execution engine of `state.Changes` and is wired in the ensure loop as a manager itself.
 
@@ -65,7 +65,7 @@ Paradigmatic handlers for [`ifacestate`](https://github.com/canonical/snapd/tree
 
 Assertions are signed documents used to carry policy or verification information. The [`overlord/assertstate`](https://github.com/canonical/snapd/tree/master/overlord/assertstate) manager, using the [`asserts`](https://github.com/canonical/snapd/tree/master/asserts) package, is responsible for maintaining the system assertion database. This includes updating and retrieving assertions, as needed, and to verify snaps. The `snap-declaration` assertion`,` for example, carries identity and sandbox policy information for a snap, while `snap-revision` carries verification information for a specific snap revision.
 
-Paradigmatic functionality in [`assertstate`](https://github.com/canonical/snapd/tree/master/overlord/assertstate) is `DB` to get read-only access to the database, more direct retrieval helpers (e.g. `SnapDeclaration`) , `RefreshSnapAssertions` and the `verify-snap` task.
+Paradigmatic functionality in [`assertstate`](https://github.com/canonical/snapd/tree/master/overlord/assertstate) is [`DB`](https://pkg.go.dev/github.com/snapcore/snapd/overlord/assertstate#DB) to get read-only access to the database, more direct retrieval helpers (e.g. [`SnapDeclaration`](https://pkg.go.dev/github.com/snapcore/snapd/overlord/assertstate#SnapDeclaration)) , [`RefreshSnapAssertions`](https://pkg.go.dev/github.com/snapcore/snapd/overlord/assertstate#RefreshSnapAssertions) and the `verify-snap` task.
 
 More state managers exist to cover other aspects of snaps ([`hookstate`](https://github.com/canonical/snapd/tree/master/overlord/hookstate) for hooks, etc.) 
 
