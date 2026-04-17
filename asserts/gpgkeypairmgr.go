@@ -153,7 +153,7 @@ func (gkm *GPGKeypairManager) retrieveLoadedKey(fpr string, uid string) (*extKey
 		return nil, fmt.Errorf("cannot retrieve key with fingerprint %q in GPG keyring", fpr)
 	}
 
-	pubKey, rsaPub, gotFingerprint, err := extKeypairMgrReadOpenPGPPublicKey(bytes.NewBuffer(out))
+	pubKey, rsaPub, gotFingerprint, err := readOpenPGPRSAPublicKey(bytes.NewBuffer(out))
 	if err != nil {
 		return nil, fmt.Errorf("cannot load GPG public key with fingerprint %q: %v", fpr, err)
 	}
