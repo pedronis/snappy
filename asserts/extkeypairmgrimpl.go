@@ -22,7 +22,6 @@ package asserts
 import (
 	"bytes"
 	"crypto"
-	"crypto/rsa"
 	"errors"
 	"fmt"
 	"io"
@@ -68,14 +67,12 @@ type extKeypairMgrLoadedKey struct {
 	name      string
 	keyHandle string
 	pubKey    PublicKey
-	rsaPub    *rsa.PublicKey
 }
 
 type extKeypairMgrCachedKey struct {
 	name      string
 	keyHandle string
 	pubKey    PublicKey
-	rsaPub    *rsa.PublicKey
 	privKey   PrivateKey
 }
 
@@ -140,8 +137,8 @@ func (m *extKeypairMgrImpl) cacheLoadedKey(loaded *extKeypairMgrLoadedKey) (*ext
 	if loaded.pubKey == nil {
 		return nil, fmt.Errorf("internal error: loaded key %q is missing a public key", loaded.name)
 	}
-	if loaded.rsaPub == nil {
-		return nil, fmt.Errorf("internal error: loaded key %q is missing an RSA public key", loaded.name)
+	if _, err := cryptoRSAPublicKey(loaded.pubKey); err != nil {
+		return nil, fmt.Errorf("internal error: loaded key %q has invalid public key: %v", loaded.name, err)
 	}
 
 	keyID := loaded.pubKey.ID()
@@ -151,14 +148,12 @@ func (m *extKeypairMgrImpl) cacheLoadedKey(loaded *extKeypairMgrLoadedKey) (*ext
 			name:      loaded.name,
 			keyHandle: loaded.keyHandle,
 			pubKey:    loaded.pubKey,
-			rsaPub:    loaded.rsaPub,
 		}
 		m.cache[keyID] = entry
 	} else {
 		entry.name = loaded.name
 		entry.keyHandle = loaded.keyHandle
 		entry.pubKey = loaded.pubKey
-		entry.rsaPub = loaded.rsaPub
 	}
 	m.nameToID[loaded.name] = keyID
 	return entry, nil
@@ -220,12 +215,13 @@ func (m *extKeypairMgrImpl) privateKey(entry *extKeypairMgrCachedKey) PrivateKey
 	if entry.privKey != nil {
 		return entry.privKey
 	}
+	rsaPub := mustCryptoRSAPublicKey(entry.pubKey)
 
 	switch m.signing {
 	case extKeypairMgrSigningRSAPKCS:
 		signer := packet.NewSignerPrivateKey(v1FixedTimestamp, &extSigner{
 			keyHandle: entry.keyHandle,
-			rsaPub:    entry.rsaPub,
+			publicKey: rsaPub,
 			signWith:  m.backend.RSAPKCSSign,
 		})
 		signk := openpgpPrivateKey{privk: signer}
@@ -233,7 +229,7 @@ func (m *extKeypairMgrImpl) privateKey(entry *extKeypairMgrCachedKey) PrivateKey
 			pubKey:     entry.pubKey,
 			from:       m.from,
 			externalID: entry.keyHandle,
-			bitLen:     entry.rsaPub.N.BitLen(),
+			bitLen:     rsaPub.N.BitLen(),
 			doSign:     signk.sign,
 		}
 	case extKeypairMgrSigningOpenPGP:
@@ -241,7 +237,7 @@ func (m *extKeypairMgrImpl) privateKey(entry *extKeypairMgrCachedKey) PrivateKey
 			pubKey:     entry.pubKey,
 			from:       m.from,
 			externalID: entry.keyHandle,
-			bitLen:     entry.rsaPub.N.BitLen(),
+			bitLen:     rsaPub.N.BitLen(),
 			doSign: func(content []byte) (*packet.Signature, error) {
 				return m.backend.Sign(entry.keyHandle, content)
 			},
@@ -304,12 +300,12 @@ var digestInfoSHA512Prefix = []byte{0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x
 
 type extSigner struct {
 	keyHandle string
-	rsaPub    *rsa.PublicKey
+	publicKey crypto.PublicKey
 	signWith  func(keyHandle string, prepared []byte) ([]byte, error)
 }
 
 func (es *extSigner) Public() crypto.PublicKey {
-	return es.rsaPub
+	return es.publicKey
 }
 
 func (es *extSigner) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {

@@ -94,7 +94,6 @@ func (s *extKeypairMgrImplSuite) newLoadedKey(c *check.C, name string, keyHandle
 		name:      name,
 		keyHandle: keyHandle,
 		pubKey:    RSAPublicKey(&privKey.PublicKey),
-		rsaPub:    &privKey.PublicKey,
 	}
 }
 
@@ -277,9 +276,8 @@ func (s *extKeypairMgrImplSuite) TestReadOpenPGPRSAPublicKey(c *check.C) {
 	err = subkey.Serialize(buf)
 	c.Assert(err, check.IsNil)
 
-	pubKey, rsaPub, fingerprint, err := readOpenPGPRSAPublicKey(bytes.NewReader(buf.Bytes()))
+	pubKey, fingerprint, err := readOpenPGPRSAPublicKey(bytes.NewReader(buf.Bytes()))
 	c.Assert(err, check.IsNil)
-	c.Check(rsaPub, check.DeepEquals, &privKey.PublicKey)
 	c.Check(pubKey.ID(), check.Equals, RSAPublicKey(&privKey.PublicKey).ID())
 	c.Check(fingerprint, check.Equals, fmt.Sprintf("%X", primary.Fingerprint))
 }

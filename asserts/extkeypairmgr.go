@@ -111,22 +111,21 @@ func (em *ExternalKeypairManager) keyNames() ([]string, error) {
 	return knames.Names, nil
 }
 
-func (em *ExternalKeypairManager) findByName(name string) (PublicKey, *rsa.PublicKey, error) {
+func (em *ExternalKeypairManager) findByName(name string) (PublicKey, error) {
 	var k []byte
 	err := em.keyMgr("get-public-key", []string{"-f", "DER", "-k", name}, nil, &k)
 	if err != nil {
-		return nil, nil, &keyNotFoundError{msg: fmt.Sprintf("cannot find external key pair: %v", err)}
+		return nil, &keyNotFoundError{msg: fmt.Sprintf("cannot find external key pair: %v", err)}
 	}
 	pubk, err := x509.ParsePKIXPublicKey(k)
 	if err != nil {
-		return nil, nil, fmt.Errorf("cannot decode external key %q: %v", name, err)
+		return nil, fmt.Errorf("cannot decode external key %q: %v", name, err)
 	}
 	rsaPub, ok := pubk.(*rsa.PublicKey)
 	if !ok {
-		return nil, nil, fmt.Errorf("expected RSA public key, got instead: %T", pubk)
+		return nil, fmt.Errorf("expected RSA public key, got instead: %T", pubk)
 	}
-	pubKey := RSAPublicKey(rsaPub)
-	return pubKey, rsaPub, nil
+	return RSAPublicKey(rsaPub), nil
 }
 
 func (em *ExternalKeypairManager) Export(keyName string) ([]byte, error) {
@@ -183,7 +182,7 @@ func (s *externalKeypairMgrBackend) Features() (extKeypairMgrSigning, extKeypair
 }
 
 func (s *externalKeypairMgrBackend) LoadByName(name string) (*extKeypairMgrLoadedKey, error) {
-	pubKey, rsaPub, err := s.manager.findByName(name)
+	pubKey, err := s.manager.findByName(name)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +190,6 @@ func (s *externalKeypairMgrBackend) LoadByName(name string) (*extKeypairMgrLoade
 		name:      name,
 		keyHandle: name,
 		pubKey:    pubKey,
-		rsaPub:    rsaPub,
 	}, nil
 }
 
