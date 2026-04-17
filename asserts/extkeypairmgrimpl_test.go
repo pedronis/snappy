@@ -20,8 +20,11 @@
 package asserts
 
 import (
+	"crypto"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
+	"io"
 
 	"golang.org/x/crypto/openpgp/packet"
 	check "gopkg.in/check.v1"
@@ -48,6 +51,30 @@ type fakeExtKeypairMgrBackend struct {
 
 type fakeExtKeypairMgrBackendWithoutLookup struct {
 	fakeExtKeypairMgrBackendBase
+}
+
+type fakeNonRSAPublicKey struct {
+	id string
+}
+
+func (pk *fakeNonRSAPublicKey) keyEncode(w io.Writer) error {
+	return nil
+}
+
+func (pk *fakeNonRSAPublicKey) keyID() string {
+	return pk.id
+}
+
+func (pk *fakeNonRSAPublicKey) ID() string {
+	return pk.id
+}
+
+func (pk *fakeNonRSAPublicKey) verify(content []byte, sig *packet.Signature) error {
+	return nil
+}
+
+func (pk *fakeNonRSAPublicKey) cryptoPublicKey() crypto.PublicKey {
+	return ed25519.PublicKey{}
 }
 
 func (s *fakeExtKeypairMgrBackendBase) CheckFeatures() (extKeypairMgrSigning, error) {
@@ -253,6 +280,26 @@ func (s *extKeypairMgrImplSuite) TestGetByNameFallbackUsesConfiguredMissingKeyEr
 	c.Assert(err, check.ErrorMatches, `cannot find fake key`)
 	c.Check(IsKeyNotFound(err), check.Equals, true)
 	c.Check(backend.visitCalls, check.Equals, 1)
+}
+
+func (s *extKeypairMgrImplSuite) TestCacheLoadedKeyInvalidPublicKeyErrorIsNotRepetitive(c *check.C) {
+	impl, err := newExtKeypairMgrImpl(&fakeExtKeypairMgrBackend{
+		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
+			signing: extKeypairMgrSigningRSAPKCS,
+		},
+	}, "fake", func() error {
+		return &keyNotFoundError{msg: "missing key"}
+	})
+	c.Assert(err, check.IsNil)
+
+	_, err = impl.cacheLoadedKey(&extKeypairMgrLoadedKey{
+		name:      "default",
+		keyHandle: "handle-default",
+		pubKey:    &fakeNonRSAPublicKey{id: "ZmFrZQ"},
+	})
+	c.Assert(err, check.NotNil)
+	c.Check(err.Error(), check.Matches, `loaded key "default" has invalid public key: internal error: expected RSA public key, got instead: .*`)
+	c.Check(err.Error(), check.Not(check.Matches), `internal error: loaded key .*: internal error: .*`)
 }
 
 func (s *extKeypairMgrImplSuite) TestGetMissingUsesConfiguredError(c *check.C) {

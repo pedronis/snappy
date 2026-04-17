@@ -115,7 +115,7 @@ func (m *extKeypairMgrImpl) cacheLoadedKey(loaded *extKeypairMgrLoadedKey) (*ext
 		return nil, fmt.Errorf("internal error: loaded key %q is missing a public key", loaded.name)
 	}
 	if _, err := cryptoRSAPublicKey(loaded.pubKey); err != nil {
-		return nil, fmt.Errorf("internal error: loaded key %q has invalid public key: %v", loaded.name, err)
+		return nil, fmt.Errorf("loaded key %q has invalid public key: %v", loaded.name, err)
 	}
 
 	keyID := loaded.pubKey.ID()
