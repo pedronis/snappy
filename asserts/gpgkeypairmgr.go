@@ -168,17 +168,6 @@ func (gkm *GPGKeypairManager) retrieveLoadedKey(fpr string, uid string) (*extKey
 	}, nil
 }
 
-// Walk iterates over all the RSA private keys in the local GPG setup calling the provided callback until this returns an error
-func (gkm *GPGKeypairManager) Walk(consider func(privk PrivateKey, fingerprint string, uid string) error) error {
-	return (&gpgKeypairMgrBackend{manager: gkm}).Visit(func(loaded *extKeypairMgrLoadedKey) error {
-		entry, err := gkm.impl.cacheLoadedKey(loaded)
-		if err != nil {
-			return err
-		}
-		return consider(gkm.impl.privateKey(entry), loaded.keyHandle, loaded.name)
-	})
-}
-
 func (gkm *GPGKeypairManager) walkSecretKeys(consider func(fingerprint string, uid string) error) error {
 	// see GPG source doc/DETAILS
 	out, err := gkm.gpg(nil, "--batch", "--list-secret-keys", "--fingerprint", "--with-colons", "--fixed-list-mode")
