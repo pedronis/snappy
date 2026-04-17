@@ -353,7 +353,7 @@ type extPGPPrivateKey struct {
 	doSign     func(content []byte) (*packet.Signature, error)
 }
 
-func newExtPGPPrivateKey(exportedPubKeyStream io.Reader, from string, sign func(content []byte) (*packet.Signature, error)) (*extPGPPrivateKey, error) {
+func readOpenPGPRSAPublicKey(exportedPubKeyStream io.Reader) (PublicKey, *rsa.PublicKey, string, error) {
 	var pubKey *packet.PublicKey
 
 	rd := packet.NewReader(exportedPubKeyStream)
@@ -363,34 +363,43 @@ func newExtPGPPrivateKey(exportedPubKeyStream io.Reader, from string, sign func(
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("cannot read exported public key: %v", err)
+			return nil, nil, "", fmt.Errorf("cannot read exported public key: %v", err)
 		}
 		cand, ok := pkt.(*packet.PublicKey)
-		if ok {
-			if cand.IsSubkey {
-				continue
-			}
-			if pubKey != nil {
-				return nil, fmt.Errorf("cannot select exported public key, found many")
-			}
-			pubKey = cand
+		if !ok {
+			continue
 		}
+		if cand.IsSubkey {
+			continue
+		}
+		if pubKey != nil {
+			return nil, nil, "", fmt.Errorf("cannot select exported public key, found many")
+		}
+		pubKey = cand
 	}
 
 	if pubKey == nil {
-		return nil, fmt.Errorf("cannot read exported public key, found none (broken export)")
-
+		return nil, nil, "", fmt.Errorf("cannot read exported public key, found none (broken export)")
 	}
 
 	rsaPubKey, ok := pubKey.PublicKey.(*rsa.PublicKey)
 	if !ok {
-		return nil, fmt.Errorf("not a RSA key")
+		return nil, nil, "", fmt.Errorf("not a RSA key")
+	}
+
+	return RSAPublicKey(rsaPubKey), rsaPubKey, fmt.Sprintf("%X", pubKey.Fingerprint), nil
+}
+
+func newExtPGPPrivateKey(exportedPubKeyStream io.Reader, from string, sign func(content []byte) (*packet.Signature, error)) (*extPGPPrivateKey, error) {
+	pubKey, rsaPubKey, fingerprint, err := readOpenPGPRSAPublicKey(exportedPubKeyStream)
+	if err != nil {
+		return nil, err
 	}
 
 	return &extPGPPrivateKey{
-		pubKey:     RSAPublicKey(rsaPubKey),
+		pubKey:     pubKey,
 		from:       from,
-		externalID: fmt.Sprintf("%X", pubKey.Fingerprint),
+		externalID: fingerprint,
 		bitLen:     rsaPubKey.N.BitLen(),
 		doSign:     sign,
 	}, nil
