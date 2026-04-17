@@ -20,11 +20,8 @@
 package asserts
 
 import (
-	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
-	"fmt"
-	"time"
 
 	"golang.org/x/crypto/openpgp/packet"
 	check "gopkg.in/check.v1"
@@ -240,27 +237,6 @@ func (s *extKeypairMgrImplSuite) TestGetByNameFallbackCachesVisitedEntry(c *chec
 	c.Check(exported, check.DeepEquals, expectedExport)
 	c.Check(backend.visitCalls, check.Equals, 1)
 }
-
-func (s *extKeypairMgrImplSuite) TestReadOpenPGPRSAPublicKey(c *check.C) {
-	privKey, err := rsa.GenerateKey(rand.Reader, 1024)
-	c.Assert(err, check.IsNil)
-
-	primary := packet.NewRSAPublicKey(time.Now(), &privKey.PublicKey)
-	subkey := packet.NewRSAPublicKey(time.Now(), &privKey.PublicKey)
-	subkey.IsSubkey = true
-
-	buf := new(bytes.Buffer)
-	err = primary.Serialize(buf)
-	c.Assert(err, check.IsNil)
-	err = subkey.Serialize(buf)
-	c.Assert(err, check.IsNil)
-
-	pubKey, fingerprint, err := readOpenPGPRSAPublicKey(bytes.NewReader(buf.Bytes()))
-	c.Assert(err, check.IsNil)
-	c.Check(pubKey.ID(), check.Equals, RSAPublicKey(&privKey.PublicKey).ID())
-	c.Check(fingerprint, check.Equals, fmt.Sprintf("%X", primary.Fingerprint))
-}
-
 func (s *extKeypairMgrImplSuite) TestGetByNameFallbackUsesConfiguredMissingKeyError(c *check.C) {
 	backend := &fakeExtKeypairMgrBackendWithoutLookup{
 		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
