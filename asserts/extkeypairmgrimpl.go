@@ -36,20 +36,13 @@ const (
 	extKeypairMgrSigningOpenPGP extKeypairMgrSigning = "OpenPGP"
 )
 
-type extKeypairMgrPublicKeyFormat string
-
-const (
-	extKeypairMgrPublicKeyFormatDER     extKeypairMgrPublicKeyFormat = "DER"
-	extKeypairMgrPublicKeyFormatOpenPGP extKeypairMgrPublicKeyFormat = "OpenPGP"
-)
-
 // extKeypairMgrBackend defines the backend contract for the shared external
 // keypair manager implementation. keyHandle is the preferred backend-native
 // identifier and Visit is the discovery path used for enumeration and fallback
 // lookup by name when direct lookup is not available.
 type extKeypairMgrBackend interface {
-	// Features returns the backend signing and public-key formats.
-	Features() (extKeypairMgrSigning, extKeypairMgrPublicKeyFormat, error)
+	// CheckFeatures validates backend support and returns the supported signing mode.
+	CheckFeatures() (extKeypairMgrSigning, error)
 	// Visit discovers keys and may be used for both enumeration and fallback search.
 	Visit(consider func(loaded *extKeypairMgrLoadedKey) error) error
 	// RSAPKCSSign signs the caller-prepared RSA-PKCS input using keyHandle.
@@ -81,17 +74,13 @@ type extKeypairMgrImpl struct {
 	from          string
 	missingKeyErr func() error
 	signing       extKeypairMgrSigning
-	publicKeys    extKeypairMgrPublicKeyFormat
 	nameToID      map[string]string
 	cache         map[string]*extKeypairMgrCachedKey
 }
 
 func newExtKeypairMgrImpl(backend extKeypairMgrBackend, from string, missingKeyErr func() error) (*extKeypairMgrImpl, error) {
-	signing, publicKeys, err := backend.Features()
+	signing, err := backend.CheckFeatures()
 	if err != nil {
-		return nil, err
-	}
-	if err := validateExtKeypairMgrFeatures(signing, publicKeys); err != nil {
 		return nil, err
 	}
 	return &extKeypairMgrImpl{
@@ -99,7 +88,6 @@ func newExtKeypairMgrImpl(backend extKeypairMgrBackend, from string, missingKeyE
 		from:          from,
 		missingKeyErr: missingKeyErr,
 		signing:       signing,
-		publicKeys:    publicKeys,
 		nameToID:      make(map[string]string),
 		cache:         make(map[string]*extKeypairMgrCachedKey),
 	}, nil
@@ -111,17 +99,6 @@ func mustNewExtKeypairMgrImpl(backend extKeypairMgrBackend, from string, missing
 		panic(fmt.Sprintf("internal error: cannot setup keypair manager: %v", err))
 	}
 	return impl
-}
-
-func validateExtKeypairMgrFeatures(signing extKeypairMgrSigning, publicKeys extKeypairMgrPublicKeyFormat) error {
-	switch {
-	case signing == extKeypairMgrSigningRSAPKCS && publicKeys == extKeypairMgrPublicKeyFormatDER:
-		return nil
-	case signing == extKeypairMgrSigningOpenPGP && publicKeys == extKeypairMgrPublicKeyFormatOpenPGP:
-		return nil
-	default:
-		return fmt.Errorf("unsupported external keypair manager feature combination: signing=%q public-keys=%q", signing, publicKeys)
-	}
 }
 
 func (m *extKeypairMgrImpl) cacheLoadedKey(loaded *extKeypairMgrLoadedKey) (*extKeypairMgrCachedKey, error) {
