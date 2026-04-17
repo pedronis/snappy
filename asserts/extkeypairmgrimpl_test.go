@@ -31,7 +31,7 @@ type extKeypairMgrImplSuite struct{}
 
 var _ = check.Suite(&extKeypairMgrImplSuite{})
 
-type fakeExtKeypairMgrStrategy struct {
+type fakeExtKeypairMgrBackend struct {
 	signing        extKeypairMgrSigning
 	publicKeys     extKeypairMgrPublicKeyFormat
 	loadByName     map[string]*extKeypairMgrLoadedKey
@@ -43,11 +43,11 @@ type fakeExtKeypairMgrStrategy struct {
 	privByHandle   map[string]*rsa.PrivateKey
 }
 
-func (s *fakeExtKeypairMgrStrategy) Features() (extKeypairMgrSigning, extKeypairMgrPublicKeyFormat, error) {
+func (s *fakeExtKeypairMgrBackend) Features() (extKeypairMgrSigning, extKeypairMgrPublicKeyFormat, error) {
 	return s.signing, s.publicKeys, nil
 }
 
-func (s *fakeExtKeypairMgrStrategy) LoadByName(name string) (*extKeypairMgrLoadedKey, error) {
+func (s *fakeExtKeypairMgrBackend) LoadByName(name string) (*extKeypairMgrLoadedKey, error) {
 	s.loadCalls = append(s.loadCalls, name)
 	loaded := s.loadByName[name]
 	if loaded == nil {
@@ -56,7 +56,7 @@ func (s *fakeExtKeypairMgrStrategy) LoadByName(name string) (*extKeypairMgrLoade
 	return loaded, nil
 }
 
-func (s *fakeExtKeypairMgrStrategy) Walk(consider func(loaded *extKeypairMgrLoadedKey) error) error {
+func (s *fakeExtKeypairMgrBackend) Walk(consider func(loaded *extKeypairMgrLoadedKey) error) error {
 	s.walkCalls++
 	for _, loaded := range s.walkKeys {
 		if err := consider(loaded); err != nil {
@@ -66,12 +66,12 @@ func (s *fakeExtKeypairMgrStrategy) Walk(consider func(loaded *extKeypairMgrLoad
 	return nil
 }
 
-func (s *fakeExtKeypairMgrStrategy) RSAPKCSSign(keyHandle string, prepared []byte) ([]byte, error) {
+func (s *fakeExtKeypairMgrBackend) RSAPKCSSign(keyHandle string, prepared []byte) ([]byte, error) {
 	s.rsaSignHandles = append(s.rsaSignHandles, keyHandle)
 	return rsa.SignPKCS1v15(rand.Reader, s.privByHandle[keyHandle], 0, prepared)
 }
 
-func (s *fakeExtKeypairMgrStrategy) Sign(keyHandle string, content []byte) (*packet.Signature, error) {
+func (s *fakeExtKeypairMgrBackend) Sign(keyHandle string, content []byte) (*packet.Signature, error) {
 	s.pgpSignHandles = append(s.pgpSignHandles, keyHandle)
 	return openpgpPrivateKey{privk: packet.NewRSAPrivateKey(v1FixedTimestamp, s.privByHandle[keyHandle])}.sign(content)
 }
@@ -88,12 +88,12 @@ func (s *extKeypairMgrImplSuite) newLoadedKey(c *check.C, name string, keyHandle
 }
 
 func (s *extKeypairMgrImplSuite) TestRejectsUnsupportedFeatureMix(c *check.C) {
-	strategy := &fakeExtKeypairMgrStrategy{
+	backend := &fakeExtKeypairMgrBackend{
 		signing:    extKeypairMgrSigningRSAPKCS,
 		publicKeys: extKeypairMgrPublicKeyFormatOpenPGP,
 	}
 
-	_, err := newExtKeypairMgrImpl(strategy, "fake", func() error {
+	_, err := newExtKeypairMgrImpl(backend, "fake", func() error {
 		return &keyNotFoundError{msg: "missing key"}
 	})
 
@@ -102,7 +102,7 @@ func (s *extKeypairMgrImplSuite) TestRejectsUnsupportedFeatureMix(c *check.C) {
 
 func (s *extKeypairMgrImplSuite) TestLoadByNameCachesExportAndPrivateKey(c *check.C) {
 	privKey, loaded := s.newLoadedKey(c, "default", "handle-default")
-	strategy := &fakeExtKeypairMgrStrategy{
+	backend := &fakeExtKeypairMgrBackend{
 		signing:    extKeypairMgrSigningRSAPKCS,
 		publicKeys: extKeypairMgrPublicKeyFormatDER,
 		loadByName: map[string]*extKeypairMgrLoadedKey{
@@ -113,7 +113,7 @@ func (s *extKeypairMgrImplSuite) TestLoadByNameCachesExportAndPrivateKey(c *chec
 		},
 	}
 
-	impl, err := newExtKeypairMgrImpl(strategy, "fake", func() error {
+	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
 		return &keyNotFoundError{msg: "missing key"}
 	})
 	c.Assert(err, check.IsNil)
@@ -128,15 +128,15 @@ func (s *extKeypairMgrImplSuite) TestLoadByNameCachesExportAndPrivateKey(c *chec
 	c.Assert(err, check.IsNil)
 
 	c.Check(key1, check.Equals, key2)
-	c.Check(strategy.loadCalls, check.DeepEquals, []string{"default"})
-	c.Check(strategy.walkCalls, check.Equals, 0)
+	c.Check(backend.loadCalls, check.DeepEquals, []string{"default"})
+	c.Check(backend.walkCalls, check.Equals, 0)
 	c.Check(exported, check.DeepEquals, expectedExport)
 }
 
 func (s *extKeypairMgrImplSuite) TestGetFallsBackToWalkAndCachesEntries(c *check.C) {
 	privKey1, loaded1 := s.newLoadedKey(c, "default", "handle-default")
 	privKey2, loaded2 := s.newLoadedKey(c, "models", "handle-models")
-	strategy := &fakeExtKeypairMgrStrategy{
+	backend := &fakeExtKeypairMgrBackend{
 		signing:      extKeypairMgrSigningRSAPKCS,
 		publicKeys:   extKeypairMgrPublicKeyFormatDER,
 		loadByName:   map[string]*extKeypairMgrLoadedKey{},
@@ -144,7 +144,7 @@ func (s *extKeypairMgrImplSuite) TestGetFallsBackToWalkAndCachesEntries(c *check
 		privByHandle: map[string]*rsa.PrivateKey{"handle-default": privKey1, "handle-models": privKey2},
 	}
 
-	impl, err := newExtKeypairMgrImpl(strategy, "fake", func() error {
+	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
 		return &keyNotFoundError{msg: "missing key"}
 	})
 	c.Assert(err, check.IsNil)
@@ -158,19 +158,19 @@ func (s *extKeypairMgrImplSuite) TestGetFallsBackToWalkAndCachesEntries(c *check
 
 	c.Check(key2.PublicKey().ID(), check.Equals, loaded2.pubKey.ID())
 	c.Check(key1.PublicKey().ID(), check.Equals, loaded1.pubKey.ID())
-	c.Check(strategy.walkCalls, check.Equals, 2)
+	c.Check(backend.walkCalls, check.Equals, 2)
 	c.Check(list, check.DeepEquals, []ExternalKeyInfo{{Name: "default", ID: loaded1.pubKey.ID()}, {Name: "models", ID: loaded2.pubKey.ID()}})
 }
 
 func (s *extKeypairMgrImplSuite) TestGetMissingUsesConfiguredError(c *check.C) {
-	strategy := &fakeExtKeypairMgrStrategy{
+	backend := &fakeExtKeypairMgrBackend{
 		signing:      extKeypairMgrSigningRSAPKCS,
 		publicKeys:   extKeypairMgrPublicKeyFormatDER,
 		loadByName:   map[string]*extKeypairMgrLoadedKey{},
 		privByHandle: map[string]*rsa.PrivateKey{},
 	}
 
-	impl, err := newExtKeypairMgrImpl(strategy, "fake", func() error {
+	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
 		return &keyNotFoundError{msg: "cannot find fake key"}
 	})
 	c.Assert(err, check.IsNil)
@@ -178,12 +178,12 @@ func (s *extKeypairMgrImplSuite) TestGetMissingUsesConfiguredError(c *check.C) {
 	_, err = impl.Get("missing-id")
 	c.Assert(err, check.ErrorMatches, `cannot find fake key`)
 	c.Check(IsKeyNotFound(err), check.Equals, true)
-	c.Check(strategy.walkCalls, check.Equals, 1)
+	c.Check(backend.walkCalls, check.Equals, 1)
 }
 
 func (s *extKeypairMgrImplSuite) TestRSAPKCSSigningUsesKeyHandle(c *check.C) {
 	privKey, loaded := s.newLoadedKey(c, "default", "rsa-handle")
-	strategy := &fakeExtKeypairMgrStrategy{
+	backend := &fakeExtKeypairMgrBackend{
 		signing:    extKeypairMgrSigningRSAPKCS,
 		publicKeys: extKeypairMgrPublicKeyFormatDER,
 		loadByName: map[string]*extKeypairMgrLoadedKey{
@@ -194,7 +194,7 @@ func (s *extKeypairMgrImplSuite) TestRSAPKCSSigningUsesKeyHandle(c *check.C) {
 		},
 	}
 
-	impl, err := newExtKeypairMgrImpl(strategy, "fake", func() error {
+	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
 		return &keyNotFoundError{msg: "missing key"}
 	})
 	c.Assert(err, check.IsNil)
@@ -205,12 +205,12 @@ func (s *extKeypairMgrImplSuite) TestRSAPKCSSigningUsesKeyHandle(c *check.C) {
 	c.Assert(err, check.IsNil)
 	err = RawVerifyWithKey([]byte("hello"), sig, priv.PublicKey())
 	c.Assert(err, check.IsNil)
-	c.Check(strategy.rsaSignHandles, check.DeepEquals, []string{"rsa-handle"})
+	c.Check(backend.rsaSignHandles, check.DeepEquals, []string{"rsa-handle"})
 }
 
 func (s *extKeypairMgrImplSuite) TestOpenPGPSigningUsesKeyHandle(c *check.C) {
 	privKey, loaded := s.newLoadedKey(c, "default", "pgp-handle")
-	strategy := &fakeExtKeypairMgrStrategy{
+	backend := &fakeExtKeypairMgrBackend{
 		signing:    extKeypairMgrSigningOpenPGP,
 		publicKeys: extKeypairMgrPublicKeyFormatOpenPGP,
 		loadByName: map[string]*extKeypairMgrLoadedKey{
@@ -221,7 +221,7 @@ func (s *extKeypairMgrImplSuite) TestOpenPGPSigningUsesKeyHandle(c *check.C) {
 		},
 	}
 
-	impl, err := newExtKeypairMgrImpl(strategy, "fake", func() error {
+	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
 		return &keyNotFoundError{msg: "missing key"}
 	})
 	c.Assert(err, check.IsNil)
@@ -232,5 +232,5 @@ func (s *extKeypairMgrImplSuite) TestOpenPGPSigningUsesKeyHandle(c *check.C) {
 	c.Assert(err, check.IsNil)
 	err = RawVerifyWithKey([]byte("hello"), sig, priv.PublicKey())
 	c.Assert(err, check.IsNil)
-	c.Check(strategy.pgpSignHandles, check.DeepEquals, []string{"pgp-handle"})
+	c.Check(backend.pgpSignHandles, check.DeepEquals, []string{"pgp-handle"})
 }
