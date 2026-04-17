@@ -377,8 +377,8 @@ type gpgKeypairMgrBackend struct {
 	manager *GPGKeypairManager
 }
 
-func (s *gpgKeypairMgrBackend) Features() (extKeypairMgrSigning, extKeypairMgrPublicKeyFormat, error) {
-	return extKeypairMgrSigningOpenPGP, extKeypairMgrPublicKeyFormatOpenPGP, nil
+func (s *gpgKeypairMgrBackend) CheckFeatures() (extKeypairMgrSigning, error) {
+	return extKeypairMgrSigningOpenPGP, nil
 }
 
 func (s *gpgKeypairMgrBackend) Visit(consider func(loaded *extKeypairMgrLoadedKey) error) error {

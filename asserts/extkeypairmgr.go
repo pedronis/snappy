@@ -174,11 +174,11 @@ type externalKeypairMgrBackend struct {
 	manager *ExternalKeypairManager
 }
 
-func (s *externalKeypairMgrBackend) Features() (extKeypairMgrSigning, extKeypairMgrPublicKeyFormat, error) {
+func (s *externalKeypairMgrBackend) CheckFeatures() (extKeypairMgrSigning, error) {
 	if err := s.manager.checkFeatures(); err != nil {
-		return "", "", err
+		return "", err
 	}
-	return extKeypairMgrSigningRSAPKCS, extKeypairMgrPublicKeyFormatDER, nil
+	return extKeypairMgrSigningRSAPKCS, nil
 }
 
 func (s *externalKeypairMgrBackend) LoadByName(name string) (*extKeypairMgrLoadedKey, error) {
