@@ -195,7 +195,7 @@ func (s *externalKeypairMgrBackend) LoadByName(name string) (*extKeypairMgrLoade
 	}, nil
 }
 
-func (s *externalKeypairMgrBackend) Walk(consider func(loaded *extKeypairMgrLoadedKey) error) error {
+func (s *externalKeypairMgrBackend) Visit(consider func(loaded *extKeypairMgrLoadedKey) error) error {
 	names, err := s.manager.keyNames()
 	if err != nil {
 		return err
