@@ -21,7 +21,6 @@ package asserts
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -171,7 +170,7 @@ func (gkm *GPGKeypairManager) retrieveLoadedKey(fpr string, uid string) (*extKey
 
 // Walk iterates over all the RSA private keys in the local GPG setup calling the provided callback until this returns an error
 func (gkm *GPGKeypairManager) Walk(consider func(privk PrivateKey, fingerprint string, uid string) error) error {
-	return (&gpgKeypairMgrBackend{manager: gkm}).Walk(func(loaded *extKeypairMgrLoadedKey) error {
+	return (&gpgKeypairMgrBackend{manager: gkm}).Visit(func(loaded *extKeypairMgrLoadedKey) error {
 		entry, err := gkm.impl.cacheLoadedKey(loaded)
 		if err != nil {
 			return err
@@ -394,26 +393,7 @@ func (s *gpgKeypairMgrBackend) Features() (extKeypairMgrSigning, extKeypairMgrPu
 	return extKeypairMgrSigningOpenPGP, extKeypairMgrPublicKeyFormatOpenPGP, nil
 }
 
-func (s *gpgKeypairMgrBackend) LoadByName(name string) (*extKeypairMgrLoadedKey, error) {
-	stop := errors.New("stop marker")
-	var hit *extKeypairMgrLoadedKey
-	err := s.Walk(func(loaded *extKeypairMgrLoadedKey) error {
-		if loaded.name == name {
-			hit = loaded
-			return stop
-		}
-		return nil
-	})
-	if err == stop {
-		return hit, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return nil, errKeypairNotFoundInGPGKeyring
-}
-
-func (s *gpgKeypairMgrBackend) Walk(consider func(loaded *extKeypairMgrLoadedKey) error) error {
+func (s *gpgKeypairMgrBackend) Visit(consider func(loaded *extKeypairMgrLoadedKey) error) error {
 	return s.manager.walkSecretKeys(func(fpr string, uid string) error {
 		loaded, err := s.manager.retrieveLoadedKey(fpr, uid)
 		if err != nil {

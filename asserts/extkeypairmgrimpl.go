@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/rsa"
+	"errors"
 	"fmt"
 	"io"
 
@@ -45,19 +46,22 @@ const (
 
 // extKeypairMgrBackend defines the backend contract for the shared external
 // keypair manager implementation. keyHandle is the preferred backend-native
-// identifier and Walk is the fallback discovery path when direct lookup by name
-// is not available or not sufficient.
+// identifier and Visit is the discovery path used for enumeration and fallback
+// lookup by name when direct lookup is not available.
 type extKeypairMgrBackend interface {
 	// Features returns the backend signing and public-key formats.
 	Features() (extKeypairMgrSigning, extKeypairMgrPublicKeyFormat, error)
-	// LoadByName resolves a user-visible name directly when the backend supports it.
-	LoadByName(name string) (*extKeypairMgrLoadedKey, error)
-	// Walk discovers keys and may be used for both enumeration and fallback search.
-	Walk(consider func(loaded *extKeypairMgrLoadedKey) error) error
+	// Visit discovers keys and may be used for both enumeration and fallback search.
+	Visit(consider func(loaded *extKeypairMgrLoadedKey) error) error
 	// RSAPKCSSign signs the caller-prepared RSA-PKCS input using keyHandle.
 	RSAPKCSSign(keyHandle string, prepared []byte) ([]byte, error)
 	// Sign signs content directly and returns a detached OpenPGP signature packet.
 	Sign(keyHandle string, content []byte) (*packet.Signature, error)
+}
+
+type extKeypairMgrDirectLookupBackend interface {
+	// LoadByName resolves a user-visible name directly when the backend supports it.
+	LoadByName(name string) (*extKeypairMgrLoadedKey, error)
 }
 
 type extKeypairMgrLoadedKey struct {
@@ -166,16 +170,39 @@ func (m *extKeypairMgrImpl) loadByName(name string) (*extKeypairMgrCachedKey, er
 			return entry, nil
 		}
 	}
-	loaded, err := m.backend.LoadByName(name)
+	if lookupBackend, ok := m.backend.(extKeypairMgrDirectLookupBackend); ok {
+		loaded, err := lookupBackend.LoadByName(name)
+		if err != nil {
+			return nil, err
+		}
+		return m.cacheLoadedKey(loaded)
+	}
+
+	stop := errors.New("stop marker")
+	var hit *extKeypairMgrCachedKey
+	err := m.backend.Visit(func(loaded *extKeypairMgrLoadedKey) error {
+		if loaded.name != name {
+			return nil
+		}
+		entry, err := m.cacheLoadedKey(loaded)
+		if err != nil {
+			return err
+		}
+		hit = entry
+		return stop
+	})
+	if err == stop {
+		return hit, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	return m.cacheLoadedKey(loaded)
+	return nil, m.missingKeyErr()
 }
 
-func (m *extKeypairMgrImpl) walkAll() ([]*extKeypairMgrCachedKey, error) {
+func (m *extKeypairMgrImpl) visitAll() ([]*extKeypairMgrCachedKey, error) {
 	var entries []*extKeypairMgrCachedKey
-	err := m.backend.Walk(func(loaded *extKeypairMgrLoadedKey) error {
+	err := m.backend.Visit(func(loaded *extKeypairMgrLoadedKey) error {
 		entry, err := m.cacheLoadedKey(loaded)
 		if err != nil {
 			return err
@@ -238,7 +265,7 @@ func (m *extKeypairMgrImpl) Get(keyID string) (PrivateKey, error) {
 	if entry := m.cache[keyID]; entry != nil {
 		return m.privateKey(entry), nil
 	}
-	if _, err := m.walkAll(); err != nil {
+	if _, err := m.visitAll(); err != nil {
 		return nil, err
 	}
 	if entry := m.cache[keyID]; entry != nil {
@@ -256,7 +283,7 @@ func (m *extKeypairMgrImpl) Export(name string) ([]byte, error) {
 }
 
 func (m *extKeypairMgrImpl) List() ([]ExternalKeyInfo, error) {
-	entries, err := m.walkAll()
+	entries, err := m.visitAll()
 	if err != nil {
 		return nil, err
 	}

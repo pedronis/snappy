@@ -31,19 +31,27 @@ type extKeypairMgrImplSuite struct{}
 
 var _ = check.Suite(&extKeypairMgrImplSuite{})
 
-type fakeExtKeypairMgrBackend struct {
+type fakeExtKeypairMgrBackendBase struct {
 	signing        extKeypairMgrSigning
 	publicKeys     extKeypairMgrPublicKeyFormat
 	loadByName     map[string]*extKeypairMgrLoadedKey
-	walkKeys       []*extKeypairMgrLoadedKey
+	visitKeys      []*extKeypairMgrLoadedKey
 	loadCalls      []string
-	walkCalls      int
+	visitCalls     int
 	rsaSignHandles []string
 	pgpSignHandles []string
 	privByHandle   map[string]*rsa.PrivateKey
 }
 
-func (s *fakeExtKeypairMgrBackend) Features() (extKeypairMgrSigning, extKeypairMgrPublicKeyFormat, error) {
+type fakeExtKeypairMgrBackend struct {
+	fakeExtKeypairMgrBackendBase
+}
+
+type fakeExtKeypairMgrBackendWithoutLookup struct {
+	fakeExtKeypairMgrBackendBase
+}
+
+func (s *fakeExtKeypairMgrBackendBase) Features() (extKeypairMgrSigning, extKeypairMgrPublicKeyFormat, error) {
 	return s.signing, s.publicKeys, nil
 }
 
@@ -56,9 +64,9 @@ func (s *fakeExtKeypairMgrBackend) LoadByName(name string) (*extKeypairMgrLoaded
 	return loaded, nil
 }
 
-func (s *fakeExtKeypairMgrBackend) Walk(consider func(loaded *extKeypairMgrLoadedKey) error) error {
-	s.walkCalls++
-	for _, loaded := range s.walkKeys {
+func (s *fakeExtKeypairMgrBackendBase) Visit(consider func(loaded *extKeypairMgrLoadedKey) error) error {
+	s.visitCalls++
+	for _, loaded := range s.visitKeys {
 		if err := consider(loaded); err != nil {
 			return err
 		}
@@ -66,12 +74,12 @@ func (s *fakeExtKeypairMgrBackend) Walk(consider func(loaded *extKeypairMgrLoade
 	return nil
 }
 
-func (s *fakeExtKeypairMgrBackend) RSAPKCSSign(keyHandle string, prepared []byte) ([]byte, error) {
+func (s *fakeExtKeypairMgrBackendBase) RSAPKCSSign(keyHandle string, prepared []byte) ([]byte, error) {
 	s.rsaSignHandles = append(s.rsaSignHandles, keyHandle)
 	return rsa.SignPKCS1v15(rand.Reader, s.privByHandle[keyHandle], 0, prepared)
 }
 
-func (s *fakeExtKeypairMgrBackend) Sign(keyHandle string, content []byte) (*packet.Signature, error) {
+func (s *fakeExtKeypairMgrBackendBase) Sign(keyHandle string, content []byte) (*packet.Signature, error) {
 	s.pgpSignHandles = append(s.pgpSignHandles, keyHandle)
 	return openpgpPrivateKey{privk: packet.NewRSAPrivateKey(v1FixedTimestamp, s.privByHandle[keyHandle])}.sign(content)
 }
@@ -89,8 +97,10 @@ func (s *extKeypairMgrImplSuite) newLoadedKey(c *check.C, name string, keyHandle
 
 func (s *extKeypairMgrImplSuite) TestRejectsUnsupportedFeatureMix(c *check.C) {
 	backend := &fakeExtKeypairMgrBackend{
-		signing:    extKeypairMgrSigningRSAPKCS,
-		publicKeys: extKeypairMgrPublicKeyFormatOpenPGP,
+		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
+			signing:    extKeypairMgrSigningRSAPKCS,
+			publicKeys: extKeypairMgrPublicKeyFormatOpenPGP,
+		},
 	}
 
 	_, err := newExtKeypairMgrImpl(backend, "fake", func() error {
@@ -103,13 +113,15 @@ func (s *extKeypairMgrImplSuite) TestRejectsUnsupportedFeatureMix(c *check.C) {
 func (s *extKeypairMgrImplSuite) TestLoadByNameCachesExportAndPrivateKey(c *check.C) {
 	privKey, loaded := s.newLoadedKey(c, "default", "handle-default")
 	backend := &fakeExtKeypairMgrBackend{
-		signing:    extKeypairMgrSigningRSAPKCS,
-		publicKeys: extKeypairMgrPublicKeyFormatDER,
-		loadByName: map[string]*extKeypairMgrLoadedKey{
-			"default": loaded,
-		},
-		privByHandle: map[string]*rsa.PrivateKey{
-			"handle-default": privKey,
+		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
+			signing:    extKeypairMgrSigningRSAPKCS,
+			publicKeys: extKeypairMgrPublicKeyFormatDER,
+			loadByName: map[string]*extKeypairMgrLoadedKey{
+				"default": loaded,
+			},
+			privByHandle: map[string]*rsa.PrivateKey{
+				"handle-default": privKey,
+			},
 		},
 	}
 
@@ -129,7 +141,7 @@ func (s *extKeypairMgrImplSuite) TestLoadByNameCachesExportAndPrivateKey(c *chec
 
 	c.Check(key1, check.Equals, key2)
 	c.Check(backend.loadCalls, check.DeepEquals, []string{"default"})
-	c.Check(backend.walkCalls, check.Equals, 0)
+	c.Check(backend.visitCalls, check.Equals, 0)
 	c.Check(exported, check.DeepEquals, expectedExport)
 }
 
@@ -137,11 +149,13 @@ func (s *extKeypairMgrImplSuite) TestGetFallsBackToWalkAndCachesEntries(c *check
 	privKey1, loaded1 := s.newLoadedKey(c, "default", "handle-default")
 	privKey2, loaded2 := s.newLoadedKey(c, "models", "handle-models")
 	backend := &fakeExtKeypairMgrBackend{
-		signing:      extKeypairMgrSigningRSAPKCS,
-		publicKeys:   extKeypairMgrPublicKeyFormatDER,
-		loadByName:   map[string]*extKeypairMgrLoadedKey{},
-		walkKeys:     []*extKeypairMgrLoadedKey{loaded1, loaded2},
-		privByHandle: map[string]*rsa.PrivateKey{"handle-default": privKey1, "handle-models": privKey2},
+		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
+			signing:      extKeypairMgrSigningRSAPKCS,
+			publicKeys:   extKeypairMgrPublicKeyFormatDER,
+			loadByName:   map[string]*extKeypairMgrLoadedKey{},
+			visitKeys:    []*extKeypairMgrLoadedKey{loaded1, loaded2},
+			privByHandle: map[string]*rsa.PrivateKey{"handle-default": privKey1, "handle-models": privKey2},
+		},
 	}
 
 	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
@@ -158,16 +172,121 @@ func (s *extKeypairMgrImplSuite) TestGetFallsBackToWalkAndCachesEntries(c *check
 
 	c.Check(key2.PublicKey().ID(), check.Equals, loaded2.pubKey.ID())
 	c.Check(key1.PublicKey().ID(), check.Equals, loaded1.pubKey.ID())
-	c.Check(backend.walkCalls, check.Equals, 2)
+	c.Check(backend.visitCalls, check.Equals, 2)
 	c.Check(list, check.DeepEquals, []ExternalKeyInfo{{Name: "default", ID: loaded1.pubKey.ID()}, {Name: "models", ID: loaded2.pubKey.ID()}})
+}
+
+func (s *extKeypairMgrImplSuite) TestGetByNameUsesDirectLookupFastPath(c *check.C) {
+	privKey, loaded := s.newLoadedKey(c, "default", "handle-default")
+	backend := &fakeExtKeypairMgrBackend{
+		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
+			signing:    extKeypairMgrSigningRSAPKCS,
+			publicKeys: extKeypairMgrPublicKeyFormatDER,
+			loadByName: map[string]*extKeypairMgrLoadedKey{
+				"default": loaded,
+			},
+			visitKeys: []*extKeypairMgrLoadedKey{loaded},
+			privByHandle: map[string]*rsa.PrivateKey{
+				"handle-default": privKey,
+			},
+		},
+	}
+
+	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
+		return &keyNotFoundError{msg: "missing key"}
+	})
+	c.Assert(err, check.IsNil)
+
+	_, err = impl.GetByName("default")
+	c.Assert(err, check.IsNil)
+
+	c.Check(backend.loadCalls, check.DeepEquals, []string{"default"})
+	c.Check(backend.visitCalls, check.Equals, 0)
+}
+
+func (s *extKeypairMgrImplSuite) TestGetByNameFallsBackToVisitWithoutDirectLookup(c *check.C) {
+	privKey, loaded := s.newLoadedKey(c, "default", "handle-default")
+	backend := &fakeExtKeypairMgrBackendWithoutLookup{
+		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
+			signing:    extKeypairMgrSigningRSAPKCS,
+			publicKeys: extKeypairMgrPublicKeyFormatDER,
+			visitKeys:  []*extKeypairMgrLoadedKey{loaded},
+			privByHandle: map[string]*rsa.PrivateKey{
+				"handle-default": privKey,
+			},
+		},
+	}
+
+	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
+		return &keyNotFoundError{msg: "missing key"}
+	})
+	c.Assert(err, check.IsNil)
+
+	priv, err := impl.GetByName("default")
+	c.Assert(err, check.IsNil)
+	c.Check(priv.PublicKey().ID(), check.Equals, loaded.pubKey.ID())
+	c.Check(backend.visitCalls, check.Equals, 1)
+}
+
+func (s *extKeypairMgrImplSuite) TestGetByNameFallbackCachesVisitedEntry(c *check.C) {
+	privKey, loaded := s.newLoadedKey(c, "default", "handle-default")
+	backend := &fakeExtKeypairMgrBackendWithoutLookup{
+		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
+			signing:    extKeypairMgrSigningRSAPKCS,
+			publicKeys: extKeypairMgrPublicKeyFormatDER,
+			visitKeys:  []*extKeypairMgrLoadedKey{loaded},
+			privByHandle: map[string]*rsa.PrivateKey{
+				"handle-default": privKey,
+			},
+		},
+	}
+
+	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
+		return &keyNotFoundError{msg: "missing key"}
+	})
+	c.Assert(err, check.IsNil)
+
+	key1, err := impl.GetByName("default")
+	c.Assert(err, check.IsNil)
+	exported, err := impl.Export("default")
+	c.Assert(err, check.IsNil)
+	key2, err := impl.GetByName("default")
+	c.Assert(err, check.IsNil)
+	expectedExport, err := EncodePublicKey(loaded.pubKey)
+	c.Assert(err, check.IsNil)
+
+	c.Check(key1, check.Equals, key2)
+	c.Check(exported, check.DeepEquals, expectedExport)
+	c.Check(backend.visitCalls, check.Equals, 1)
+}
+
+func (s *extKeypairMgrImplSuite) TestGetByNameFallbackUsesConfiguredMissingKeyError(c *check.C) {
+	backend := &fakeExtKeypairMgrBackendWithoutLookup{
+		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
+			signing:    extKeypairMgrSigningRSAPKCS,
+			publicKeys: extKeypairMgrPublicKeyFormatDER,
+		},
+	}
+
+	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
+		return &keyNotFoundError{msg: "cannot find fake key"}
+	})
+	c.Assert(err, check.IsNil)
+
+	_, err = impl.GetByName("missing")
+	c.Assert(err, check.ErrorMatches, `cannot find fake key`)
+	c.Check(IsKeyNotFound(err), check.Equals, true)
+	c.Check(backend.visitCalls, check.Equals, 1)
 }
 
 func (s *extKeypairMgrImplSuite) TestGetMissingUsesConfiguredError(c *check.C) {
 	backend := &fakeExtKeypairMgrBackend{
-		signing:      extKeypairMgrSigningRSAPKCS,
-		publicKeys:   extKeypairMgrPublicKeyFormatDER,
-		loadByName:   map[string]*extKeypairMgrLoadedKey{},
-		privByHandle: map[string]*rsa.PrivateKey{},
+		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
+			signing:      extKeypairMgrSigningRSAPKCS,
+			publicKeys:   extKeypairMgrPublicKeyFormatDER,
+			loadByName:   map[string]*extKeypairMgrLoadedKey{},
+			privByHandle: map[string]*rsa.PrivateKey{},
+		},
 	}
 
 	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
@@ -178,19 +297,21 @@ func (s *extKeypairMgrImplSuite) TestGetMissingUsesConfiguredError(c *check.C) {
 	_, err = impl.Get("missing-id")
 	c.Assert(err, check.ErrorMatches, `cannot find fake key`)
 	c.Check(IsKeyNotFound(err), check.Equals, true)
-	c.Check(backend.walkCalls, check.Equals, 1)
+	c.Check(backend.visitCalls, check.Equals, 1)
 }
 
 func (s *extKeypairMgrImplSuite) TestRSAPKCSSigningUsesKeyHandle(c *check.C) {
 	privKey, loaded := s.newLoadedKey(c, "default", "rsa-handle")
 	backend := &fakeExtKeypairMgrBackend{
-		signing:    extKeypairMgrSigningRSAPKCS,
-		publicKeys: extKeypairMgrPublicKeyFormatDER,
-		loadByName: map[string]*extKeypairMgrLoadedKey{
-			"default": loaded,
-		},
-		privByHandle: map[string]*rsa.PrivateKey{
-			"rsa-handle": privKey,
+		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
+			signing:    extKeypairMgrSigningRSAPKCS,
+			publicKeys: extKeypairMgrPublicKeyFormatDER,
+			loadByName: map[string]*extKeypairMgrLoadedKey{
+				"default": loaded,
+			},
+			privByHandle: map[string]*rsa.PrivateKey{
+				"rsa-handle": privKey,
+			},
 		},
 	}
 
@@ -211,13 +332,15 @@ func (s *extKeypairMgrImplSuite) TestRSAPKCSSigningUsesKeyHandle(c *check.C) {
 func (s *extKeypairMgrImplSuite) TestOpenPGPSigningUsesKeyHandle(c *check.C) {
 	privKey, loaded := s.newLoadedKey(c, "default", "pgp-handle")
 	backend := &fakeExtKeypairMgrBackend{
-		signing:    extKeypairMgrSigningOpenPGP,
-		publicKeys: extKeypairMgrPublicKeyFormatOpenPGP,
-		loadByName: map[string]*extKeypairMgrLoadedKey{
-			"default": loaded,
-		},
-		privByHandle: map[string]*rsa.PrivateKey{
-			"pgp-handle": privKey,
+		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
+			signing:    extKeypairMgrSigningOpenPGP,
+			publicKeys: extKeypairMgrPublicKeyFormatOpenPGP,
+			loadByName: map[string]*extKeypairMgrLoadedKey{
+				"default": loaded,
+			},
+			privByHandle: map[string]*rsa.PrivateKey{
+				"pgp-handle": privKey,
+			},
 		},
 	}
 
