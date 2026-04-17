@@ -47,7 +47,7 @@ type ExternalKeypairManager struct {
 // NewExternalKeypairManager creates a new ExternalKeypairManager using the program at keyMgrPath.
 func NewExternalKeypairManager(keyMgrPath string) (*ExternalKeypairManager, error) {
 	em := &ExternalKeypairManager{keyMgrPath: keyMgrPath}
-	impl, err := newExtKeypairMgrImpl(&externalKeypairMgrStrategy{manager: em}, fmt.Sprintf("external keypair manager %q", keyMgrPath), func() error {
+	impl, err := newExtKeypairMgrImpl(&externalKeypairMgrBackend{manager: em}, fmt.Sprintf("external keypair manager %q", keyMgrPath), func() error {
 		return &keyNotFoundError{msg: "cannot find external key pair"}
 	})
 	if err != nil {
@@ -171,18 +171,18 @@ func (em *ExternalKeypairManager) List() ([]ExternalKeyInfo, error) {
 	return em.impl.List()
 }
 
-type externalKeypairMgrStrategy struct {
+type externalKeypairMgrBackend struct {
 	manager *ExternalKeypairManager
 }
 
-func (s *externalKeypairMgrStrategy) Features() (extKeypairMgrSigning, extKeypairMgrPublicKeyFormat, error) {
+func (s *externalKeypairMgrBackend) Features() (extKeypairMgrSigning, extKeypairMgrPublicKeyFormat, error) {
 	if err := s.manager.checkFeatures(); err != nil {
 		return "", "", err
 	}
 	return extKeypairMgrSigningRSAPKCS, extKeypairMgrPublicKeyFormatDER, nil
 }
 
-func (s *externalKeypairMgrStrategy) LoadByName(name string) (*extKeypairMgrLoadedKey, error) {
+func (s *externalKeypairMgrBackend) LoadByName(name string) (*extKeypairMgrLoadedKey, error) {
 	pubKey, rsaPub, err := s.manager.findByName(name)
 	if err != nil {
 		return nil, err
@@ -195,7 +195,7 @@ func (s *externalKeypairMgrStrategy) LoadByName(name string) (*extKeypairMgrLoad
 	}, nil
 }
 
-func (s *externalKeypairMgrStrategy) Walk(consider func(loaded *extKeypairMgrLoadedKey) error) error {
+func (s *externalKeypairMgrBackend) Walk(consider func(loaded *extKeypairMgrLoadedKey) error) error {
 	names, err := s.manager.keyNames()
 	if err != nil {
 		return err
@@ -212,7 +212,7 @@ func (s *externalKeypairMgrStrategy) Walk(consider func(loaded *extKeypairMgrLoa
 	return nil
 }
 
-func (s *externalKeypairMgrStrategy) RSAPKCSSign(keyHandle string, prepared []byte) ([]byte, error) {
+func (s *externalKeypairMgrBackend) RSAPKCSSign(keyHandle string, prepared []byte) ([]byte, error) {
 	var signature []byte
 	err := s.manager.keyMgr("sign", []string{"-m", "RSA-PKCS", "-k", keyHandle}, prepared, &signature)
 	if err != nil {
@@ -221,6 +221,6 @@ func (s *externalKeypairMgrStrategy) RSAPKCSSign(keyHandle string, prepared []by
 	return signature, nil
 }
 
-func (s *externalKeypairMgrStrategy) Sign(keyHandle string, content []byte) (*packet.Signature, error) {
+func (s *externalKeypairMgrBackend) Sign(keyHandle string, content []byte) (*packet.Signature, error) {
 	return nil, fmt.Errorf("internal error: external keypair manager does not support OpenPGP signing")
 }

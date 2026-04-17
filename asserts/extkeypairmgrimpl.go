@@ -43,11 +43,11 @@ const (
 	extKeypairMgrPublicKeyFormatOpenPGP extKeypairMgrPublicKeyFormat = "OpenPGP"
 )
 
-// extKeypairMgrStrategy defines the backend contract for the shared external
+// extKeypairMgrBackend defines the backend contract for the shared external
 // keypair manager implementation. keyHandle is the preferred backend-native
 // identifier and Walk is the fallback discovery path when direct lookup by name
 // is not available or not sufficient.
-type extKeypairMgrStrategy interface {
+type extKeypairMgrBackend interface {
 	// Features returns the backend signing and public-key formats.
 	Features() (extKeypairMgrSigning, extKeypairMgrPublicKeyFormat, error)
 	// LoadByName resolves a user-visible name directly when the backend supports it.
@@ -76,7 +76,7 @@ type extKeypairMgrCachedKey struct {
 }
 
 type extKeypairMgrImpl struct {
-	strategy      extKeypairMgrStrategy
+	backend       extKeypairMgrBackend
 	from          string
 	missingKeyErr func() error
 	signing       extKeypairMgrSigning
@@ -85,8 +85,8 @@ type extKeypairMgrImpl struct {
 	cache         map[string]*extKeypairMgrCachedKey
 }
 
-func newExtKeypairMgrImpl(strategy extKeypairMgrStrategy, from string, missingKeyErr func() error) (*extKeypairMgrImpl, error) {
-	signing, publicKeys, err := strategy.Features()
+func newExtKeypairMgrImpl(backend extKeypairMgrBackend, from string, missingKeyErr func() error) (*extKeypairMgrImpl, error) {
+	signing, publicKeys, err := backend.Features()
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func newExtKeypairMgrImpl(strategy extKeypairMgrStrategy, from string, missingKe
 		return nil, err
 	}
 	return &extKeypairMgrImpl{
-		strategy:      strategy,
+		backend:       backend,
 		from:          from,
 		missingKeyErr: missingKeyErr,
 		signing:       signing,
@@ -104,8 +104,8 @@ func newExtKeypairMgrImpl(strategy extKeypairMgrStrategy, from string, missingKe
 	}, nil
 }
 
-func mustNewExtKeypairMgrImpl(strategy extKeypairMgrStrategy, from string, missingKeyErr func() error) *extKeypairMgrImpl {
-	impl, err := newExtKeypairMgrImpl(strategy, from, missingKeyErr)
+func mustNewExtKeypairMgrImpl(backend extKeypairMgrBackend, from string, missingKeyErr func() error) *extKeypairMgrImpl {
+	impl, err := newExtKeypairMgrImpl(backend, from, missingKeyErr)
 	if err != nil {
 		panic(fmt.Sprintf("internal error: cannot setup keypair manager: %v", err))
 	}
@@ -166,7 +166,7 @@ func (m *extKeypairMgrImpl) loadByName(name string) (*extKeypairMgrCachedKey, er
 			return entry, nil
 		}
 	}
-	loaded, err := m.strategy.LoadByName(name)
+	loaded, err := m.backend.LoadByName(name)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func (m *extKeypairMgrImpl) loadByName(name string) (*extKeypairMgrCachedKey, er
 
 func (m *extKeypairMgrImpl) walkAll() ([]*extKeypairMgrCachedKey, error) {
 	var entries []*extKeypairMgrCachedKey
-	err := m.strategy.Walk(func(loaded *extKeypairMgrLoadedKey) error {
+	err := m.backend.Walk(func(loaded *extKeypairMgrLoadedKey) error {
 		entry, err := m.cacheLoadedKey(loaded)
 		if err != nil {
 			return err
@@ -199,7 +199,7 @@ func (m *extKeypairMgrImpl) privateKey(entry *extKeypairMgrCachedKey) PrivateKey
 		signer := packet.NewSignerPrivateKey(v1FixedTimestamp, &extSigner{
 			keyHandle: entry.keyHandle,
 			rsaPub:    entry.rsaPub,
-			signWith:  m.strategy.RSAPKCSSign,
+			signWith:  m.backend.RSAPKCSSign,
 		})
 		signk := openpgpPrivateKey{privk: signer}
 		entry.privKey = &extPGPPrivateKey{
@@ -216,7 +216,7 @@ func (m *extKeypairMgrImpl) privateKey(entry *extKeypairMgrCachedKey) PrivateKey
 			externalID: entry.keyHandle,
 			bitLen:     entry.rsaPub.N.BitLen(),
 			doSign: func(content []byte) (*packet.Signature, error) {
-				return m.strategy.Sign(entry.keyHandle, content)
+				return m.backend.Sign(entry.keyHandle, content)
 			},
 		}
 	default:

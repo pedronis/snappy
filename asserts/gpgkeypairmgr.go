@@ -139,7 +139,7 @@ func (gkm *GPGKeypairManager) gpg(input []byte, args ...string) ([]byte, error) 
 // Main purpose is allowing signing using keys from a GPG setup.
 func NewGPGKeypairManager() *GPGKeypairManager {
 	gkm := &GPGKeypairManager{}
-	gkm.impl = mustNewExtKeypairMgrImpl(&gpgKeypairMgrStrategy{manager: gkm}, "GPG", func() error {
+	gkm.impl = mustNewExtKeypairMgrImpl(&gpgKeypairMgrBackend{manager: gkm}, "GPG", func() error {
 		return errKeypairNotFoundInGPGKeyring
 	})
 	return gkm
@@ -171,7 +171,7 @@ func (gkm *GPGKeypairManager) retrieveLoadedKey(fpr string, uid string) (*extKey
 
 // Walk iterates over all the RSA private keys in the local GPG setup calling the provided callback until this returns an error
 func (gkm *GPGKeypairManager) Walk(consider func(privk PrivateKey, fingerprint string, uid string) error) error {
-	return (&gpgKeypairMgrStrategy{manager: gkm}).Walk(func(loaded *extKeypairMgrLoadedKey) error {
+	return (&gpgKeypairMgrBackend{manager: gkm}).Walk(func(loaded *extKeypairMgrLoadedKey) error {
 		entry, err := gkm.impl.cacheLoadedKey(loaded)
 		if err != nil {
 			return err
@@ -225,7 +225,7 @@ func (gkm *GPGKeypairManager) walkSecretKeys(consider func(fingerprint string, u
 				}
 				fpr = fprFields[9]
 				if !strings.HasSuffix(fpr, keyID) {
-					break // strange, skip
+					break Loop // strange, skip
 				}
 			case strings.HasPrefix(lines[k], "uid:"):
 				uidFields := strings.Split(lines[k], ":")
@@ -386,15 +386,15 @@ func (gkm *GPGKeypairManager) List() (res []ExternalKeyInfo, err error) {
 	return gkm.impl.List()
 }
 
-type gpgKeypairMgrStrategy struct {
+type gpgKeypairMgrBackend struct {
 	manager *GPGKeypairManager
 }
 
-func (s *gpgKeypairMgrStrategy) Features() (extKeypairMgrSigning, extKeypairMgrPublicKeyFormat, error) {
+func (s *gpgKeypairMgrBackend) Features() (extKeypairMgrSigning, extKeypairMgrPublicKeyFormat, error) {
 	return extKeypairMgrSigningOpenPGP, extKeypairMgrPublicKeyFormatOpenPGP, nil
 }
 
-func (s *gpgKeypairMgrStrategy) LoadByName(name string) (*extKeypairMgrLoadedKey, error) {
+func (s *gpgKeypairMgrBackend) LoadByName(name string) (*extKeypairMgrLoadedKey, error) {
 	stop := errors.New("stop marker")
 	var hit *extKeypairMgrLoadedKey
 	err := s.Walk(func(loaded *extKeypairMgrLoadedKey) error {
@@ -413,7 +413,7 @@ func (s *gpgKeypairMgrStrategy) LoadByName(name string) (*extKeypairMgrLoadedKey
 	return nil, errKeypairNotFoundInGPGKeyring
 }
 
-func (s *gpgKeypairMgrStrategy) Walk(consider func(loaded *extKeypairMgrLoadedKey) error) error {
+func (s *gpgKeypairMgrBackend) Walk(consider func(loaded *extKeypairMgrLoadedKey) error) error {
 	return s.manager.walkSecretKeys(func(fpr string, uid string) error {
 		loaded, err := s.manager.retrieveLoadedKey(fpr, uid)
 		if err != nil {
@@ -423,10 +423,10 @@ func (s *gpgKeypairMgrStrategy) Walk(consider func(loaded *extKeypairMgrLoadedKe
 	})
 }
 
-func (s *gpgKeypairMgrStrategy) RSAPKCSSign(keyHandle string, prepared []byte) ([]byte, error) {
+func (s *gpgKeypairMgrBackend) RSAPKCSSign(keyHandle string, prepared []byte) ([]byte, error) {
 	return nil, fmt.Errorf("internal error: GPG keypair manager does not support RSA-PKCS signing")
 }
 
-func (s *gpgKeypairMgrStrategy) Sign(keyHandle string, content []byte) (*packet.Signature, error) {
+func (s *gpgKeypairMgrBackend) Sign(keyHandle string, content []byte) (*packet.Signature, error) {
 	return s.manager.sign(keyHandle, content)
 }
