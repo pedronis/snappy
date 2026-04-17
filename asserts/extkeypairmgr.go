@@ -21,12 +21,10 @@ package asserts
 
 import (
 	"bytes"
-	"crypto"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os/exec"
 
 	"golang.org/x/crypto/openpgp/packet"
@@ -43,20 +41,19 @@ type ExternalKeyInfo struct {
 // TODO: points to interface docs
 type ExternalKeypairManager struct {
 	keyMgrPath string
-	nameToID   map[string]string
-	cache      map[string]*cachedExtKey
+	impl       *extKeypairMgrImpl
 }
 
 // NewExternalKeypairManager creates a new ExternalKeypairManager using the program at keyMgrPath.
 func NewExternalKeypairManager(keyMgrPath string) (*ExternalKeypairManager, error) {
-	em := &ExternalKeypairManager{
-		keyMgrPath: keyMgrPath,
-		nameToID:   make(map[string]string),
-		cache:      make(map[string]*cachedExtKey),
-	}
-	if err := em.checkFeatures(); err != nil {
+	em := &ExternalKeypairManager{keyMgrPath: keyMgrPath}
+	impl, err := newExtKeypairMgrImpl(&externalKeypairMgrStrategy{manager: em}, fmt.Sprintf("external keypair manager %q", keyMgrPath), func() error {
+		return &keyNotFoundError{msg: "cannot find external key pair"}
+	})
+	if err != nil {
 		return nil, err
 	}
+	em.impl = impl
 	return em, nil
 }
 
@@ -133,61 +130,11 @@ func (em *ExternalKeypairManager) findByName(name string) (PublicKey, *rsa.Publi
 }
 
 func (em *ExternalKeypairManager) Export(keyName string) ([]byte, error) {
-	pubKey, _, err := em.findByName(keyName)
-	if err != nil {
-		return nil, err
-	}
-	return EncodePublicKey(pubKey)
-}
-
-func (em *ExternalKeypairManager) loadKey(name string) (*cachedExtKey, error) {
-	id, ok := em.nameToID[name]
-	if ok {
-		return em.cache[id], nil
-	}
-	pubKey, rsaPub, err := em.findByName(name)
-	if err != nil {
-		return nil, err
-	}
-	id = pubKey.ID()
-	em.nameToID[name] = id
-	cachedKey := &cachedExtKey{
-		pubKey: pubKey,
-		signer: &extSigner{
-			keyName: name,
-			rsaPub:  rsaPub,
-			// signWith is filled later
-		},
-	}
-	em.cache[id] = cachedKey
-	return cachedKey, nil
-}
-
-func (em *ExternalKeypairManager) privateKey(cachedKey *cachedExtKey) PrivateKey {
-	if cachedKey.privKey == nil {
-		extSigner := cachedKey.signer
-		// fill signWith
-		extSigner.signWith = em.signWith
-		signer := packet.NewSignerPrivateKey(v1FixedTimestamp, extSigner)
-		signk := openpgpPrivateKey{privk: signer}
-		extKey := &extPGPPrivateKey{
-			pubKey:     cachedKey.pubKey,
-			from:       fmt.Sprintf("external keypair manager %q", em.keyMgrPath),
-			externalID: extSigner.keyName,
-			bitLen:     extSigner.rsaPub.N.BitLen(),
-			doSign:     signk.sign,
-		}
-		cachedKey.privKey = extKey
-	}
-	return cachedKey.privKey
+	return em.impl.Export(keyName)
 }
 
 func (em *ExternalKeypairManager) GetByName(keyName string) (PrivateKey, error) {
-	cachedKey, err := em.loadKey(keyName)
-	if err != nil {
-		return nil, err
-	}
-	return em.privateKey(cachedKey), nil
+	return em.impl.GetByName(keyName)
 }
 
 // ExternalUnsupportedOpError represents the error situation of operations
@@ -216,87 +163,64 @@ func (em *ExternalKeypairManager) Generate(keyName string) error {
 	return &ExternalUnsupportedOpError{"no support to mediate generating an external keypair manager key"}
 }
 
-func (em *ExternalKeypairManager) loadAllKeys() ([]string, error) {
-	names, err := em.keyNames()
-	if err != nil {
-		return nil, err
-	}
-	for _, name := range names {
-		if _, err := em.loadKey(name); err != nil {
-			return nil, err
-		}
-	}
-	return names, nil
-}
-
 func (em *ExternalKeypairManager) Get(keyID string) (PrivateKey, error) {
-	cachedKey, ok := em.cache[keyID]
-	if !ok {
-		// try to load all keys
-		if _, err := em.loadAllKeys(); err != nil {
-			return nil, err
-		}
-		cachedKey, ok = em.cache[keyID]
-		if !ok {
-			return nil, &keyNotFoundError{msg: "cannot find external key pair"}
-		}
-	}
-	return em.privateKey(cachedKey), nil
+	return em.impl.Get(keyID)
 }
 
 func (em *ExternalKeypairManager) List() ([]ExternalKeyInfo, error) {
-	names, err := em.loadAllKeys()
+	return em.impl.List()
+}
+
+type externalKeypairMgrStrategy struct {
+	manager *ExternalKeypairManager
+}
+
+func (s *externalKeypairMgrStrategy) Features() (extKeypairMgrSigning, extKeypairMgrPublicKeyFormat, error) {
+	if err := s.manager.checkFeatures(); err != nil {
+		return "", "", err
+	}
+	return extKeypairMgrSigningRSAPKCS, extKeypairMgrPublicKeyFormatDER, nil
+}
+
+func (s *externalKeypairMgrStrategy) LoadByName(name string) (*extKeypairMgrLoadedKey, error) {
+	pubKey, rsaPub, err := s.manager.findByName(name)
 	if err != nil {
 		return nil, err
 	}
-	res := make([]ExternalKeyInfo, len(names))
-	for i, name := range names {
-		res[i].Name = name
-		res[i].ID = em.cache[em.nameToID[name]].pubKey.ID()
-	}
-	return res, nil
+	return &extKeypairMgrLoadedKey{
+		name:      name,
+		keyHandle: name,
+		pubKey:    pubKey,
+		rsaPub:    rsaPub,
+	}, nil
 }
 
-// see https://datatracker.ietf.org/doc/html/rfc2313 and more recently
-// and more precisely about SHA-512:
-// https://datatracker.ietf.org/doc/html/rfc3447#section-9.2 Notes 1.
-var digestInfoSHA512Prefix = []byte{0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05, 0x00, 0x04, 0x40}
+func (s *externalKeypairMgrStrategy) Walk(consider func(loaded *extKeypairMgrLoadedKey) error) error {
+	names, err := s.manager.keyNames()
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		loaded, err := s.LoadByName(name)
+		if err != nil {
+			return err
+		}
+		if err := consider(loaded); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-func (em *ExternalKeypairManager) signWith(keyName string, digest []byte) (signature []byte, err error) {
-	// wrap the digest into the needed DigestInfo, the RSA-PKCS
-	// mechanism or equivalent is expected not to do this on its
-	// own
-	toSign := &bytes.Buffer{}
-	toSign.Write(digestInfoSHA512Prefix)
-	toSign.Write(digest)
-
-	err = em.keyMgr("sign", []string{"-m", "RSA-PKCS", "-k", keyName}, toSign.Bytes(), &signature)
+func (s *externalKeypairMgrStrategy) RSAPKCSSign(keyHandle string, prepared []byte) ([]byte, error) {
+	var signature []byte
+	err := s.manager.keyMgr("sign", []string{"-m", "RSA-PKCS", "-k", keyHandle}, prepared, &signature)
 	if err != nil {
 		return nil, err
 	}
 	return signature, nil
 }
 
-type cachedExtKey struct {
-	pubKey  PublicKey
-	signer  *extSigner
-	privKey PrivateKey
-}
-
-type extSigner struct {
-	keyName  string
-	rsaPub   *rsa.PublicKey
-	signWith func(keyName string, digest []byte) (signature []byte, err error)
-}
-
-func (es *extSigner) Public() crypto.PublicKey {
-	return es.rsaPub
-}
-
-func (es *extSigner) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
-	if opts.HashFunc() != crypto.SHA512 {
-		return nil, fmt.Errorf("unexpected pgp signature digest")
-	}
-
-	return es.signWith(es.keyName, digest)
+func (s *externalKeypairMgrStrategy) Sign(keyHandle string, content []byte) (*packet.Signature, error) {
+	return nil, fmt.Errorf("internal error: external keypair manager does not support OpenPGP signing")
 }
