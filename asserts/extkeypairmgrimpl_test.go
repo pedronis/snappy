@@ -34,6 +34,8 @@ type extKeypairMgrImplSuite struct{}
 
 var _ = check.Suite(&extKeypairMgrImplSuite{})
 
+var fakeExtKeypairMgrConfig = extKeypairMgrConfig{signingWith: "fake", keyStore: "fake"}
+
 type fakeExtKeypairMgrBackendBase struct {
 	signing        extKeypairMgrSigning
 	loadByName     map[string]*extKeypairMgrLoadedKey
@@ -110,9 +112,7 @@ func (s *extKeypairMgrImplSuite) TestLoadByNameCachesExportAndPrivateKey(c *chec
 		},
 	}
 
-	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
-		return &keyNotFoundError{msg: "missing key"}
-	})
+	impl, err := newExtKeypairMgrImpl(backend, fakeExtKeypairMgrConfig)
 	c.Assert(err, check.IsNil)
 
 	key1, err := impl.GetByName("default")
@@ -142,9 +142,7 @@ func (s *extKeypairMgrImplSuite) TestGetFallsBackToWalkAndCachesEntries(c *check
 		},
 	}
 
-	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
-		return &keyNotFoundError{msg: "missing key"}
-	})
+	impl, err := newExtKeypairMgrImpl(backend, fakeExtKeypairMgrConfig)
 	c.Assert(err, check.IsNil)
 
 	key2, err := impl.Get(loaded2.pubKey.ID())
@@ -175,9 +173,7 @@ func (s *extKeypairMgrImplSuite) TestGetByNameUsesDirectLookupFastPath(c *check.
 		},
 	}
 
-	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
-		return &keyNotFoundError{msg: "missing key"}
-	})
+	impl, err := newExtKeypairMgrImpl(backend, fakeExtKeypairMgrConfig)
 	c.Assert(err, check.IsNil)
 
 	_, err = impl.GetByName("default")
@@ -199,9 +195,7 @@ func (s *extKeypairMgrImplSuite) TestGetByNameFallsBackToVisitWithoutDirectLooku
 		},
 	}
 
-	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
-		return &keyNotFoundError{msg: "missing key"}
-	})
+	impl, err := newExtKeypairMgrImpl(backend, fakeExtKeypairMgrConfig)
 	c.Assert(err, check.IsNil)
 
 	priv, err := impl.GetByName("default")
@@ -222,9 +216,7 @@ func (s *extKeypairMgrImplSuite) TestGetByNameFallbackCachesVisitedEntry(c *chec
 		},
 	}
 
-	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
-		return &keyNotFoundError{msg: "missing key"}
-	})
+	impl, err := newExtKeypairMgrImpl(backend, fakeExtKeypairMgrConfig)
 	c.Assert(err, check.IsNil)
 
 	key1, err := impl.GetByName("default")
@@ -240,20 +232,18 @@ func (s *extKeypairMgrImplSuite) TestGetByNameFallbackCachesVisitedEntry(c *chec
 	c.Check(exported, check.DeepEquals, expectedExport)
 	c.Check(backend.visitCalls, check.Equals, 1)
 }
-func (s *extKeypairMgrImplSuite) TestGetByNameFallbackUsesConfiguredMissingKeyError(c *check.C) {
+func (s *extKeypairMgrImplSuite) TestGetByNameFallbackUsesKeyStoreError(c *check.C) {
 	backend := &fakeExtKeypairMgrBackendWithoutLookup{
 		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
 			signing: extKeypairMgrSigningRSAPKCS,
 		},
 	}
 
-	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
-		return &keyNotFoundError{msg: "cannot find fake key"}
-	})
+	impl, err := newExtKeypairMgrImpl(backend, fakeExtKeypairMgrConfig)
 	c.Assert(err, check.IsNil)
 
 	_, err = impl.GetByName("missing")
-	c.Assert(err, check.ErrorMatches, `cannot find fake key`)
+	c.Assert(err, check.ErrorMatches, `cannot find key pair in fake`)
 	c.Check(IsKeyNotFound(err), check.Equals, true)
 	c.Check(backend.visitCalls, check.Equals, 1)
 }
@@ -272,9 +262,7 @@ func (s *extKeypairMgrImplSuite) TestCacheLoadedKeyInvalidPublicKeyErrorIsNotRep
 		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
 			signing: extKeypairMgrSigningRSAPKCS,
 		},
-	}, "fake", func() error {
-		return &keyNotFoundError{msg: "missing key"}
-	})
+	}, fakeExtKeypairMgrConfig)
 	c.Assert(err, check.IsNil)
 
 	_, err = impl.cacheLoadedKey(&extKeypairMgrLoadedKey{
@@ -287,7 +275,7 @@ func (s *extKeypairMgrImplSuite) TestCacheLoadedKeyInvalidPublicKeyErrorIsNotRep
 	c.Check(err.Error(), check.Not(check.Matches), `internal error: loaded key .*: internal error: .*`)
 }
 
-func (s *extKeypairMgrImplSuite) TestGetMissingUsesConfiguredError(c *check.C) {
+func (s *extKeypairMgrImplSuite) TestGetMissingUsesKeyStoreError(c *check.C) {
 	backend := &fakeExtKeypairMgrBackend{
 		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
 			signing:      extKeypairMgrSigningRSAPKCS,
@@ -296,13 +284,11 @@ func (s *extKeypairMgrImplSuite) TestGetMissingUsesConfiguredError(c *check.C) {
 		},
 	}
 
-	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
-		return &keyNotFoundError{msg: "cannot find fake key"}
-	})
+	impl, err := newExtKeypairMgrImpl(backend, fakeExtKeypairMgrConfig)
 	c.Assert(err, check.IsNil)
 
 	_, err = impl.Get("missing-id")
-	c.Assert(err, check.ErrorMatches, `cannot find fake key`)
+	c.Assert(err, check.ErrorMatches, `cannot find key pair in fake`)
 	c.Check(IsKeyNotFound(err), check.Equals, true)
 	c.Check(backend.visitCalls, check.Equals, 1)
 }
@@ -321,9 +307,7 @@ func (s *extKeypairMgrImplSuite) TestRSAPKCSSigningUsesKeyHandle(c *check.C) {
 		},
 	}
 
-	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
-		return &keyNotFoundError{msg: "missing key"}
-	})
+	impl, err := newExtKeypairMgrImpl(backend, fakeExtKeypairMgrConfig)
 	c.Assert(err, check.IsNil)
 
 	priv, err := impl.GetByName("default")
@@ -349,9 +333,7 @@ func (s *extKeypairMgrImplSuite) TestOpenPGPSigningUsesKeyHandle(c *check.C) {
 		},
 	}
 
-	impl, err := newExtKeypairMgrImpl(backend, "fake", func() error {
-		return &keyNotFoundError{msg: "missing key"}
-	})
+	impl, err := newExtKeypairMgrImpl(backend, fakeExtKeypairMgrConfig)
 	c.Assert(err, check.IsNil)
 
 	priv, err := impl.GetByName("default")

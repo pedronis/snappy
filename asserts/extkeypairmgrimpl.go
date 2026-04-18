@@ -69,28 +69,38 @@ type extKeypairMgrCachedKey struct {
 	privKey   PrivateKey
 }
 
-type extKeypairMgrImpl struct {
-	backend       extKeypairMgrBackend
-	from          string
-	missingKeyErr func() error
-	signing       extKeypairMgrSigning
-	nameToID      map[string]string
-	cache         map[string]*extKeypairMgrCachedKey
+type extKeypairMgrConfig struct {
+	signingWith string
+	keyStore    string
 }
 
-func newExtKeypairMgrImpl(backend extKeypairMgrBackend, from string, missingKeyErr func() error) (*extKeypairMgrImpl, error) {
+type extKeypairMgrImpl struct {
+	backend     extKeypairMgrBackend
+	signingWith string
+	keyStore    string
+	signing     extKeypairMgrSigning
+	nameToID    map[string]string
+	// cache is keyed by public key ID and contains the loaded key information, including the private key when it has been requested.
+	cache map[string]*extKeypairMgrCachedKey
+}
+
+func newExtKeypairMgrImpl(backend extKeypairMgrBackend, config extKeypairMgrConfig) (*extKeypairMgrImpl, error) {
 	signing, err := backend.CheckFeatures()
 	if err != nil {
 		return nil, err
 	}
 	return &extKeypairMgrImpl{
-		backend:       backend,
-		from:          from,
-		missingKeyErr: missingKeyErr,
-		signing:       signing,
-		nameToID:      make(map[string]string),
-		cache:         make(map[string]*extKeypairMgrCachedKey),
+		backend:     backend,
+		signingWith: config.signingWith,
+		keyStore:    config.keyStore,
+		signing:     signing,
+		nameToID:    make(map[string]string),
+		cache:       make(map[string]*extKeypairMgrCachedKey),
 	}, nil
+}
+
+func (m *extKeypairMgrImpl) keyNotFoundError() error {
+	return &keyNotFoundError{msg: fmt.Sprintf("cannot find key pair in %s", m.keyStore)}
 }
 
 func (m *extKeypairMgrImpl) cacheLoadedKey(loaded *extKeypairMgrLoadedKey) (*extKeypairMgrCachedKey, error) {
@@ -161,7 +171,7 @@ func (m *extKeypairMgrImpl) loadByName(name string) (*extKeypairMgrCachedKey, er
 	if err != nil {
 		return nil, err
 	}
-	return nil, m.missingKeyErr()
+	return nil, m.keyNotFoundError()
 }
 
 func (m *extKeypairMgrImpl) visitAll() ([]*extKeypairMgrCachedKey, error) {
@@ -199,7 +209,7 @@ func (m *extKeypairMgrImpl) privateKey(entry *extKeypairMgrCachedKey) PrivateKey
 		signk := openpgpPrivateKey{privk: signer}
 		entry.privKey = &extPGPPrivateKey{
 			pubKey:     entry.pubKey,
-			from:       m.from,
+			from:       m.signingWith,
 			externalID: entry.keyHandle,
 			bitLen:     rsaPub.N.BitLen(),
 			doSign:     signk.sign,
@@ -207,7 +217,7 @@ func (m *extKeypairMgrImpl) privateKey(entry *extKeypairMgrCachedKey) PrivateKey
 	case extKeypairMgrSigningOpenPGP:
 		entry.privKey = &extPGPPrivateKey{
 			pubKey:     entry.pubKey,
-			from:       m.from,
+			from:       m.signingWith,
 			externalID: entry.keyHandle,
 			bitLen:     rsaPub.N.BitLen(),
 			doSign: func(content []byte) (*packet.Signature, error) {
@@ -239,7 +249,7 @@ func (m *extKeypairMgrImpl) Get(keyID string) (PrivateKey, error) {
 	if entry := m.cache[keyID]; entry != nil {
 		return m.privateKey(entry), nil
 	}
-	return nil, m.missingKeyErr()
+	return nil, m.keyNotFoundError()
 }
 
 func (m *extKeypairMgrImpl) Export(name string) ([]byte, error) {

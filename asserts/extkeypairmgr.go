@@ -47,8 +47,9 @@ type ExternalKeypairManager struct {
 // NewExternalKeypairManager creates a new ExternalKeypairManager using the program at keyMgrPath.
 func NewExternalKeypairManager(keyMgrPath string) (*ExternalKeypairManager, error) {
 	em := &ExternalKeypairManager{keyMgrPath: keyMgrPath}
-	impl, err := newExtKeypairMgrImpl(&externalKeypairMgrBackend{manager: em}, fmt.Sprintf("external keypair manager %q", keyMgrPath), func() error {
-		return &keyNotFoundError{msg: "cannot find external key pair"}
+	impl, err := newExtKeypairMgrImpl(&externalKeypairMgrBackend{manager: em}, extKeypairMgrConfig{
+		signingWith: fmt.Sprintf("external keypair manager %q", keyMgrPath),
+		keyStore:    "external keypair manager",
 	})
 	if err != nil {
 		return nil, err
