@@ -283,14 +283,6 @@ func cryptoRSAPublicKey(pubKey PublicKey) (*rsa.PublicKey, error) {
 	return rsaPubKey, nil
 }
 
-func mustCryptoRSAPublicKey(pubKey PublicKey) *rsa.PublicKey {
-	rsaPubKey, err := cryptoRSAPublicKey(pubKey)
-	if err != nil {
-		panic(err)
-	}
-	return rsaPubKey
-}
-
 // PrivateKey is a cryptographic private/public key pair.
 type PrivateKey interface {
 	// PublicKey returns the public part of the pair.
