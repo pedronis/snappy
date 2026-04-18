@@ -181,6 +181,8 @@ func (s *extKeypairMgrSuite) TestGet(c *C) {
 	c.Check(s.pgm.Calls(), DeepEquals, [][]string{
 		{"keymgr", "key-names"},
 		{"keymgr", "get-public-key", "-f", "DER", "-k", "default"},
+		{"keymgr", "key-names"},
+		{"keymgr", "get-public-key", "-f", "DER", "-k", "default"},
 		{"keymgr", "get-public-key", "-f", "DER", "-k", "models"},
 	})
 
