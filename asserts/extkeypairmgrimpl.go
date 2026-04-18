@@ -69,9 +69,13 @@ type extKeypairMgrCachedKey struct {
 	privKey   PrivateKey
 }
 
+// extKeypairMgrConfig carries configuration for the shared external
+// keypair manager implementation.
 type extKeypairMgrConfig struct {
+	// signingWith identifies the signing backend for diagnostics and error messages.
 	signingWith string
-	keyStore    string
+	// keyStore names the backing key store for diagnostics, in particular key not found errors.
+	keyStore string
 }
 
 type extKeypairMgrImpl struct {
