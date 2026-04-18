@@ -39,9 +39,9 @@ const (
 // extKeypairMgrBackend defines the backend contract for the shared external
 // keypair manager implementation. keyHandle is the preferred backend-native
 // identifier and Visit is the discovery path used for enumeration and fallback
-// lookup by name when direct lookup is not available.
+// lookup by name when by-name lookup is not available.
 type extKeypairMgrBackend interface {
-	// CheckFeatures validates backend support and returns the supported signing mode.
+	// CheckFeatures validates backend support and returns the supported signing method.
 	CheckFeatures() (extKeypairMgrSigning, error)
 	// Visit discovers keys and may be used for both enumeration and fallback search.
 	Visit(consider func(loaded *extKeypairMgrLoadedKey) error) error
@@ -51,8 +51,8 @@ type extKeypairMgrBackend interface {
 	Sign(keyHandle string, content []byte) ([]byte, error)
 }
 
-type extKeypairMgrDirectLookupBackend interface {
-	// LoadByName resolves a user-visible name directly when the backend supports it.
+type extKeypairMgrByNameLookupBackend interface {
+	// LoadByName resolves a user-visible name directly when the backend supports by-name lookup.
 	LoadByName(name string) (*extKeypairMgrLoadedKey, error)
 }
 
@@ -75,27 +75,27 @@ type extKeypairMgrConfig struct {
 }
 
 type extKeypairMgrImpl struct {
-	backend     extKeypairMgrBackend
-	signingWith string
-	keyStore    string
-	signing     extKeypairMgrSigning
-	nameToID    map[string]string
+	backend       extKeypairMgrBackend
+	signingMethod extKeypairMgrSigning
+	signingWith   string
+	keyStore      string
+	nameToID      map[string]string
 	// cache is keyed by public key ID and contains the loaded key information, including the private key when it has been requested.
 	cache map[string]*extKeypairMgrCachedKey
 }
 
 func newExtKeypairMgrImpl(backend extKeypairMgrBackend, config extKeypairMgrConfig) (*extKeypairMgrImpl, error) {
-	signing, err := backend.CheckFeatures()
+	signingMethod, err := backend.CheckFeatures()
 	if err != nil {
 		return nil, err
 	}
 	return &extKeypairMgrImpl{
-		backend:     backend,
-		signingWith: config.signingWith,
-		keyStore:    config.keyStore,
-		signing:     signing,
-		nameToID:    make(map[string]string),
-		cache:       make(map[string]*extKeypairMgrCachedKey),
+		backend:       backend,
+		signingMethod: signingMethod,
+		signingWith:   config.signingWith,
+		keyStore:      config.keyStore,
+		nameToID:      make(map[string]string),
+		cache:         make(map[string]*extKeypairMgrCachedKey),
 	}, nil
 }
 
@@ -144,8 +144,8 @@ func (m *extKeypairMgrImpl) loadByName(name string) (*extKeypairMgrCachedKey, er
 			return entry, nil
 		}
 	}
-	if lookupBackend, ok := m.backend.(extKeypairMgrDirectLookupBackend); ok {
-		loaded, err := lookupBackend.LoadByName(name)
+	if byNameLookupBackend, ok := m.backend.(extKeypairMgrByNameLookupBackend); ok {
+		loaded, err := byNameLookupBackend.LoadByName(name)
 		if err != nil {
 			return nil, err
 		}
@@ -246,7 +246,7 @@ func (m *extKeypairMgrImpl) privateKey(entry *extKeypairMgrCachedKey) PrivateKey
 		panic(err)
 	}
 
-	switch m.signing {
+	switch m.signingMethod {
 	case extKeypairMgrSigningRSAPKCS:
 		signer := packet.NewSignerPrivateKey(v1FixedTimestamp, &extSigner{
 			keyHandle: entry.keyHandle,
@@ -272,7 +272,7 @@ func (m *extKeypairMgrImpl) privateKey(entry *extKeypairMgrCachedKey) PrivateKey
 			},
 		}
 	default:
-		panic(fmt.Sprintf("internal error: unsupported signing mode %q", m.signing))
+		panic(fmt.Sprintf("internal error: unsupported signing method %q", m.signingMethod))
 	}
 
 	return entry.privKey
