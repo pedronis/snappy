@@ -185,7 +185,7 @@ func (s *extKeypairMgrSuite) TestGet(c *C) {
 	})
 
 	_, err = kmgr.Get("unknown-id")
-	c.Check(err, ErrorMatches, `cannot find external key pair`)
+	c.Check(err, ErrorMatches, `cannot find key pair in external keypair manager`)
 	c.Check(asserts.IsKeyNotFound(err), Equals, true)
 }
 
