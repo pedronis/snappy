@@ -174,6 +174,33 @@ func (m *extKeypairMgrImpl) loadByName(name string) (*extKeypairMgrCachedKey, er
 	return nil, m.keyNotFoundError()
 }
 
+func (m *extKeypairMgrImpl) loadByID(keyID string) (*extKeypairMgrCachedKey, error) {
+	if entry := m.cache[keyID]; entry != nil {
+		return entry, nil
+	}
+
+	stop := errors.New("stop marker")
+	var hit *extKeypairMgrCachedKey
+	err := m.backend.Visit(func(loaded *extKeypairMgrLoadedKey) error {
+		entry, err := m.cacheLoadedKey(loaded)
+		if err != nil {
+			return err
+		}
+		if entry.pubKey.ID() != keyID {
+			return nil
+		}
+		hit = entry
+		return stop
+	})
+	if err == stop {
+		return hit, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return nil, m.keyNotFoundError()
+}
+
 func (m *extKeypairMgrImpl) visitAll() ([]*extKeypairMgrCachedKey, error) {
 	var entries []*extKeypairMgrCachedKey
 	err := m.backend.Visit(func(loaded *extKeypairMgrLoadedKey) error {
@@ -240,16 +267,11 @@ func (m *extKeypairMgrImpl) GetByName(name string) (PrivateKey, error) {
 }
 
 func (m *extKeypairMgrImpl) Get(keyID string) (PrivateKey, error) {
-	if entry := m.cache[keyID]; entry != nil {
-		return m.privateKey(entry), nil
-	}
-	if _, err := m.visitAll(); err != nil {
+	entry, err := m.loadByID(keyID)
+	if err != nil {
 		return nil, err
 	}
-	if entry := m.cache[keyID]; entry != nil {
-		return m.privateKey(entry), nil
-	}
-	return nil, m.keyNotFoundError()
+	return m.privateKey(entry), nil
 }
 
 func (m *extKeypairMgrImpl) Export(name string) ([]byte, error) {
