@@ -20,6 +20,7 @@
 package asserts
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -45,6 +46,7 @@ type fakeExtKeypairMgrBackendBase struct {
 	visitConsidered [][]string
 	rsaSignHandles  []string
 	pgpSignHandles  []string
+	pgpSignResult   map[string][]byte
 	privByHandle    map[string]*rsa.PrivateKey
 }
 
@@ -71,9 +73,21 @@ func (s *fakeExtKeypairMgrBackendBase) RSAPKCSSign(keyHandle string, prepared []
 	return rsa.SignPKCS1v15(rand.Reader, s.privByHandle[keyHandle], 0, prepared)
 }
 
-func (s *fakeExtKeypairMgrBackendBase) Sign(keyHandle string, content []byte) (*packet.Signature, error) {
+func (s *fakeExtKeypairMgrBackendBase) Sign(keyHandle string, content []byte) ([]byte, error) {
 	s.pgpSignHandles = append(s.pgpSignHandles, keyHandle)
-	return openpgpPrivateKey{privk: packet.NewRSAPrivateKey(v1FixedTimestamp, s.privByHandle[keyHandle])}.sign(content)
+	if sig := s.pgpSignResult[keyHandle]; sig != nil {
+		return sig, nil
+	}
+	packetSig, err := openpgpPrivateKey{privk: packet.NewRSAPrivateKey(v1FixedTimestamp, s.privByHandle[keyHandle])}.sign(content)
+	if err != nil {
+		return nil, err
+	}
+	buf := bytes.NewBuffer(nil)
+	err = packetSig.Serialize(buf)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 type fakeExtKeypairMgrBackend struct {
@@ -402,5 +416,29 @@ func (s *extKeypairMgrImplSuite) TestOpenPGPSigningUsesKeyHandle(c *check.C) {
 	c.Assert(err, check.IsNil)
 	err = RawVerifyWithKey([]byte("hello"), sig, priv.PublicKey())
 	c.Assert(err, check.IsNil)
+	c.Check(backend.pgpSignHandles, check.DeepEquals, []string{"pgp-handle"})
+}
+
+func (s *extKeypairMgrImplSuite) TestOpenPGPSigningInvalidPacketUsesSigningWithInError(c *check.C) {
+	_, loaded := s.newLoadedKey(c, "default", "pgp-handle")
+	backend := &fakeExtKeypairMgrBackend{
+		fakeExtKeypairMgrBackendBase: fakeExtKeypairMgrBackendBase{
+			signing: extKeypairMgrSigningOpenPGP,
+			loadByName: map[string]*extKeypairMgrLoadedKey{
+				"default": loaded,
+			},
+			pgpSignResult: map[string][]byte{
+				"pgp-handle": []byte("broken"),
+			},
+		},
+	}
+
+	impl, err := newExtKeypairMgrImpl(backend, fakeExtKeypairMgrConfig)
+	c.Assert(err, check.IsNil)
+
+	priv, err := impl.GetByName("default")
+	c.Assert(err, check.IsNil)
+	_, err = RawSignWithKey([]byte("hello"), priv)
+	c.Assert(err, check.ErrorMatches, `bad fake produced signature: .*`)
 	c.Check(backend.pgpSignHandles, check.DeepEquals, []string{"pgp-handle"})
 }

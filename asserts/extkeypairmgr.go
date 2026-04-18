@@ -27,8 +27,6 @@ import (
 	"fmt"
 	"os/exec"
 
-	"golang.org/x/crypto/openpgp/packet"
-
 	"github.com/snapcore/snapd/strutil"
 )
 
@@ -220,6 +218,6 @@ func (s *externalKeypairMgrBackend) RSAPKCSSign(keyHandle string, prepared []byt
 	return signature, nil
 }
 
-func (s *externalKeypairMgrBackend) Sign(keyHandle string, content []byte) (*packet.Signature, error) {
+func (s *externalKeypairMgrBackend) Sign(keyHandle string, content []byte) ([]byte, error) {
 	return nil, fmt.Errorf("internal error: external keypair manager does not support OpenPGP signing")
 }

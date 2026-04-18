@@ -48,7 +48,7 @@ type extKeypairMgrBackend interface {
 	// RSAPKCSSign signs the caller-prepared RSA-PKCS input using keyHandle.
 	RSAPKCSSign(keyHandle string, prepared []byte) ([]byte, error)
 	// Sign signs content directly and returns a detached OpenPGP signature packet.
-	Sign(keyHandle string, content []byte) (*packet.Signature, error)
+	Sign(keyHandle string, content []byte) ([]byte, error)
 }
 
 type extKeypairMgrDirectLookupBackend interface {
@@ -217,6 +217,26 @@ func (m *extKeypairMgrImpl) visitAll() ([]*extKeypairMgrCachedKey, error) {
 	return entries, nil
 }
 
+func (m *extKeypairMgrImpl) signOpenPGP(keyHandle string, content []byte) (*packet.Signature, error) {
+	out, err := m.backend.Sign(keyHandle, content)
+	if err != nil {
+		return nil, err
+	}
+
+	badSig := fmt.Sprintf("bad %s produced signature: ", m.signingWith)
+	sigpkt, err := packet.Read(bytes.NewReader(out))
+	if err != nil {
+		return nil, fmt.Errorf(badSig+"%v", err)
+	}
+
+	sig, ok := sigpkt.(*packet.Signature)
+	if !ok {
+		return nil, fmt.Errorf(badSig+"got %T", sigpkt)
+	}
+
+	return sig, nil
+}
+
 func (m *extKeypairMgrImpl) privateKey(entry *extKeypairMgrCachedKey) PrivateKey {
 	if entry.privKey != nil {
 		return entry.privKey
@@ -248,7 +268,7 @@ func (m *extKeypairMgrImpl) privateKey(entry *extKeypairMgrCachedKey) PrivateKey
 			externalID: entry.keyHandle,
 			bitLen:     rsaPub.N.BitLen(),
 			doSign: func(content []byte) (*packet.Signature, error) {
-				return m.backend.Sign(entry.keyHandle, content)
+				return m.signOpenPGP(entry.keyHandle, content)
 			},
 		}
 	default:

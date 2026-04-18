@@ -27,8 +27,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"golang.org/x/crypto/openpgp/packet"
-
 	"github.com/snapcore/snapd/osutil"
 	"github.com/snapcore/snapd/strutil"
 )
@@ -277,24 +275,12 @@ func (gkm *GPGKeypairManager) Delete(keyID string) error {
 	return nil
 }
 
-func (gkm *GPGKeypairManager) sign(fingerprint string, content []byte) (*packet.Signature, error) {
+func (gkm *GPGKeypairManager) sign(fingerprint string, content []byte) ([]byte, error) {
 	out, err := gkm.gpg(content, "--personal-digest-preferences", "SHA512", "--default-key", "0x"+fingerprint, "--detach-sign")
 	if err != nil {
 		return nil, fmt.Errorf("cannot sign using GPG: %v", err)
 	}
-
-	const badSig = "bad GPG produced signature: "
-	sigpkt, err := packet.Read(bytes.NewBuffer(out))
-	if err != nil {
-		return nil, fmt.Errorf(badSig+"%v", err)
-	}
-
-	sig, ok := sigpkt.(*packet.Signature)
-	if !ok {
-		return nil, fmt.Errorf(badSig+"got %T", sigpkt)
-	}
-
-	return sig, nil
+	return out, nil
 }
 
 func (gkm *GPGKeypairManager) findByName(name string) (*gpgKeypairInfo, error) {
@@ -398,6 +384,6 @@ func (s *gpgKeypairMgrBackend) RSAPKCSSign(keyHandle string, prepared []byte) ([
 	return nil, fmt.Errorf("internal error: GPG keypair manager does not support RSA-PKCS signing")
 }
 
-func (s *gpgKeypairMgrBackend) Sign(keyHandle string, content []byte) (*packet.Signature, error) {
+func (s *gpgKeypairMgrBackend) Sign(keyHandle string, content []byte) ([]byte, error) {
 	return s.manager.sign(keyHandle, content)
 }
