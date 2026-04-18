@@ -93,14 +93,6 @@ func newExtKeypairMgrImpl(backend extKeypairMgrBackend, from string, missingKeyE
 	}, nil
 }
 
-func mustNewExtKeypairMgrImpl(backend extKeypairMgrBackend, from string, missingKeyErr func() error) *extKeypairMgrImpl {
-	impl, err := newExtKeypairMgrImpl(backend, from, missingKeyErr)
-	if err != nil {
-		panic(fmt.Sprintf("internal error: cannot setup keypair manager: %v", err))
-	}
-	return impl
-}
-
 func (m *extKeypairMgrImpl) cacheLoadedKey(loaded *extKeypairMgrLoadedKey) (*extKeypairMgrCachedKey, error) {
 	if loaded == nil {
 		return nil, fmt.Errorf("internal error: missing loaded key")
@@ -192,7 +184,10 @@ func (m *extKeypairMgrImpl) privateKey(entry *extKeypairMgrCachedKey) PrivateKey
 	if entry.privKey != nil {
 		return entry.privKey
 	}
-	rsaPub := mustCryptoRSAPublicKey(entry.pubKey)
+	rsaPub, err := cryptoRSAPublicKey(entry.pubKey)
+	if err != nil {
+		panic(err)
+	}
 
 	switch m.signing {
 	case extKeypairMgrSigningRSAPKCS:

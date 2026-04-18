@@ -138,9 +138,13 @@ func (gkm *GPGKeypairManager) gpg(input []byte, args ...string) ([]byte, error) 
 // Main purpose is allowing signing using keys from a GPG setup.
 func NewGPGKeypairManager() *GPGKeypairManager {
 	gkm := &GPGKeypairManager{}
-	gkm.impl = mustNewExtKeypairMgrImpl(&gpgKeypairMgrBackend{manager: gkm}, "GPG", func() error {
+	impl, err := newExtKeypairMgrImpl(&gpgKeypairMgrBackend{manager: gkm}, "GPG", func() error {
 		return errKeypairNotFoundInGPGKeyring
 	})
+	if err != nil {
+		panic(fmt.Sprintf("internal error: cannot setup keypair manager: %v", err))
+	}
+	gkm.impl = impl
 	return gkm
 }
 

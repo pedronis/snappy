@@ -45,49 +45,8 @@ type fakeExtKeypairMgrBackendBase struct {
 	privByHandle   map[string]*rsa.PrivateKey
 }
 
-type fakeExtKeypairMgrBackend struct {
-	fakeExtKeypairMgrBackendBase
-}
-
-type fakeExtKeypairMgrBackendWithoutLookup struct {
-	fakeExtKeypairMgrBackendBase
-}
-
-type fakeNonRSAPublicKey struct {
-	id string
-}
-
-func (pk *fakeNonRSAPublicKey) keyEncode(w io.Writer) error {
-	return nil
-}
-
-func (pk *fakeNonRSAPublicKey) keyID() string {
-	return pk.id
-}
-
-func (pk *fakeNonRSAPublicKey) ID() string {
-	return pk.id
-}
-
-func (pk *fakeNonRSAPublicKey) verify(content []byte, sig *packet.Signature) error {
-	return nil
-}
-
-func (pk *fakeNonRSAPublicKey) cryptoPublicKey() crypto.PublicKey {
-	return ed25519.PublicKey{}
-}
-
 func (s *fakeExtKeypairMgrBackendBase) CheckFeatures() (extKeypairMgrSigning, error) {
 	return s.signing, nil
-}
-
-func (s *fakeExtKeypairMgrBackend) LoadByName(name string) (*extKeypairMgrLoadedKey, error) {
-	s.loadCalls = append(s.loadCalls, name)
-	loaded := s.loadByName[name]
-	if loaded == nil {
-		return nil, &keyNotFoundError{msg: "missing key"}
-	}
-	return loaded, nil
 }
 
 func (s *fakeExtKeypairMgrBackendBase) Visit(consider func(loaded *extKeypairMgrLoadedKey) error) error {
@@ -108,6 +67,23 @@ func (s *fakeExtKeypairMgrBackendBase) RSAPKCSSign(keyHandle string, prepared []
 func (s *fakeExtKeypairMgrBackendBase) Sign(keyHandle string, content []byte) (*packet.Signature, error) {
 	s.pgpSignHandles = append(s.pgpSignHandles, keyHandle)
 	return openpgpPrivateKey{privk: packet.NewRSAPrivateKey(v1FixedTimestamp, s.privByHandle[keyHandle])}.sign(content)
+}
+
+type fakeExtKeypairMgrBackend struct {
+	fakeExtKeypairMgrBackendBase
+}
+
+func (s *fakeExtKeypairMgrBackend) LoadByName(name string) (*extKeypairMgrLoadedKey, error) {
+	s.loadCalls = append(s.loadCalls, name)
+	loaded := s.loadByName[name]
+	if loaded == nil {
+		return nil, &keyNotFoundError{msg: "missing key"}
+	}
+	return loaded, nil
+}
+
+type fakeExtKeypairMgrBackendWithoutLookup struct {
+	fakeExtKeypairMgrBackendBase
 }
 
 func (s *extKeypairMgrImplSuite) newLoadedKey(c *check.C, name string, keyHandle string) (*rsa.PrivateKey, *extKeypairMgrLoadedKey) {
@@ -281,6 +257,15 @@ func (s *extKeypairMgrImplSuite) TestGetByNameFallbackUsesConfiguredMissingKeyEr
 	c.Check(IsKeyNotFound(err), check.Equals, true)
 	c.Check(backend.visitCalls, check.Equals, 1)
 }
+
+type fakeNonRSAPublicKey struct {
+	id string
+}
+
+func (pk *fakeNonRSAPublicKey) ID() string                                         { return pk.id }
+func (pk *fakeNonRSAPublicKey) verify(content []byte, sig *packet.Signature) error { return nil }
+func (pk *fakeNonRSAPublicKey) cryptoPublicKey() crypto.PublicKey                  { return ed25519.PublicKey{} }
+func (pk *fakeNonRSAPublicKey) keyEncode(w io.Writer) error                        { return nil }
 
 func (s *extKeypairMgrImplSuite) TestCacheLoadedKeyInvalidPublicKeyErrorIsNotRepetitive(c *check.C) {
 	impl, err := newExtKeypairMgrImpl(&fakeExtKeypairMgrBackend{
