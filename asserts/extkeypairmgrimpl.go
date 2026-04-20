@@ -252,7 +252,7 @@ func (m *extKeypairMgrImpl) privateKey(entry *extKeypairMgrCachedKey) PrivateKey
 
 	switch m.signingMethod {
 	case extKeypairMgrSigningRSAPKCS:
-		signer := packet.NewSignerPrivateKey(v1FixedTimestamp, &extSigner{
+		signer := packet.NewSignerPrivateKey(v1FixedTimestamp, &rsaPKCSSigner{
 			keyHandle: entry.keyHandle,
 			publicKey: rsaPub,
 			signWith:  m.backend.RSAPKCSSign,
@@ -326,17 +326,17 @@ func (m *extKeypairMgrImpl) List() ([]ExternalKeyInfo, error) {
 // https://datatracker.ietf.org/doc/html/rfc3447#section-9.2 Notes 1.
 var digestInfoSHA512Prefix = []byte{0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05, 0x00, 0x04, 0x40}
 
-type extSigner struct {
+type rsaPKCSSigner struct {
 	keyHandle string
 	publicKey crypto.PublicKey
 	signWith  func(keyHandle string, prepared []byte) ([]byte, error)
 }
 
-func (es *extSigner) Public() crypto.PublicKey {
+func (es *rsaPKCSSigner) Public() crypto.PublicKey {
 	return es.publicKey
 }
 
-func (es *extSigner) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+func (es *rsaPKCSSigner) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
 	if opts.HashFunc() != crypto.SHA512 {
 		return nil, fmt.Errorf("unexpected pgp signature digest")
 	}
