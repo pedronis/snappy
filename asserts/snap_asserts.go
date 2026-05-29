@@ -201,6 +201,9 @@ func snapDeclarationFormatAnalyze(headers map[string]any, body []byte) (formatnu
 		if rule.feature(publisherIDConstraintsFeature) {
 			setFormatNum(6)
 		}
+		if rule.feature(onClassicVariantConstraintsFeature) {
+			setFormatNum(7)
+		}
 	})
 	if err != nil {
 		return 0, err
@@ -225,6 +228,9 @@ func snapDeclarationFormatAnalyze(headers map[string]any, body []byte) (formatnu
 		}
 		if rule.feature(publisherIDConstraintsFeature) {
 			setFormatNum(6)
+		}
+		if rule.feature(onClassicVariantConstraintsFeature) {
+			setFormatNum(7)
 		}
 	})
 	if err != nil {

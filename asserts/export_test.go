@@ -44,6 +44,9 @@ var AssembleAndSignInTest = assembleAndSign
 // decodePrivateKey exposed for tests
 var DecodePrivateKeyInTest = decodePrivateKey
 
+// CompileOnClassicSystemConstraintForTest exposes the on-classic system parser for focused tests.
+var CompileOnClassicSystemConstraintForTest = compileOnClassicSystemConstraint
+
 // NewDecoderStressed makes a Decoder with a stressed setup with the given buffer and maximum sizes.
 func NewDecoderStressed(r io.Reader, bufSize, maxHeadersSize, maxBodySize, maxSigSize int) *Decoder {
 	return (&Decoder{
