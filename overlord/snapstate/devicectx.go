@@ -56,6 +56,10 @@ var (
 	DeviceCtx func(st *state.State, task *state.Task, providedDeviceCtx DeviceContext) (DeviceContext, error)
 )
 
+// EarlyDeviceStartup is a hook setup by devicestate to perform device initialization
+// required by other managers during startup. Callers must hold the state lock.
+var EarlyDeviceStartup func(st *state.State) error
+
 // EarlyDeviceCtxForEnsure is a hook setup by devicestate to resolve a device
 // context from the selected seed before the model assertion is acknowledged.
 // It is only for Ensure and StartUp decisions. Callers must hold the state lock.

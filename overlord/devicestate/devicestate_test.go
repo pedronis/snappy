@@ -1744,15 +1744,13 @@ func (s *deviceMgrSuite) TestDeviceManagerStartupUC20UbuntuSaveRunModeHappy(c *C
 	mountCmd := testutil.MockCommand(c, "systemd-mount", "")
 	defer mountCmd.Restore()
 
-	// ubuntu-save not mounted
-	err = mgr.StartUp()
-	c.Assert(err, IsNil)
-	c.Check(sysctlCmd.Calls(), HasLen, 0)
-	c.Check(mountCmd.Calls(), HasLen, 0)
-
 	restore := osutil.MockMountInfo(fmt.Sprintf(mountRunMntUbuntuSaveFmt, dirs.GlobalRootDir))
 	defer restore()
 
+	err = mgr.StartUp()
+	c.Assert(err, IsNil)
+
+	// Startup is idempotent.
 	err = mgr.StartUp()
 	c.Assert(err, IsNil)
 	c.Check(sysctlCmd.Calls(), DeepEquals, [][]string{
@@ -1787,9 +1785,15 @@ func (s *deviceMgrSuite) TestDeviceManagerStartupUC20UbuntuSaveSystemCtlFails(c 
 	restore := osutil.MockMountInfo(fmt.Sprintf(mountRunMntUbuntuSaveFmt, dirs.GlobalRootDir))
 	defer restore()
 
+	s.state.Lock()
+	err = snapstate.EarlyDeviceStartup(s.state)
+	s.state.Unlock()
+	c.Assert(err, ErrorMatches, "cannot set up ubuntu-save: systemctl command \\[start var-lib-snapd-save.mount\\] failed with exit status 1: failed")
+
+	// DeviceManager startup reports the error cached by early startup without
+	// retrying the failing operation.
 	err = mgr.StartUp()
-	c.Assert(err, NotNil)
-	c.Check(err.Error(), Equals, "cannot set up ubuntu-save: systemctl command [start var-lib-snapd-save.mount] failed with exit status 1: failed")
+	c.Assert(err, ErrorMatches, "cannot set up ubuntu-save: systemctl command \\[start var-lib-snapd-save.mount\\] failed with exit status 1: failed")
 	c.Check(sysctlCmd.Calls(), DeepEquals, [][]string{
 		{"systemctl", "start", "var-lib-snapd-save.mount"},
 	})
@@ -4585,6 +4589,11 @@ func (s *deviceMgrSuite) TestStartupAndEnsureSeededShareCachedSeedTiming(c *C) {
 
 	mgr, err := devicestate.Manager(s.state, s.hookMgr, s.o.TaskRunner(), s.newStore)
 	c.Assert(err, IsNil)
+	s.state.Lock()
+	err = snapstate.EarlyDeviceStartup(s.state)
+	s.state.Unlock()
+	c.Assert(err, IsNil)
+
 	err = mgr.StartUp()
 	c.Assert(err, IsNil)
 
@@ -4592,9 +4601,6 @@ func (s *deviceMgrSuite) TestStartupAndEnsureSeededShareCachedSeedTiming(c *C) {
 		panic("unexpected device seed reload")
 	})
 	defer restore()
-
-	err = mgr.StartUp()
-	c.Assert(err, IsNil)
 
 	restore = devicestate.MockPopulateStateFromSeed(mgr, func(string, string, timings.Measurer) ([]*state.TaskSet, error) {
 		task := s.state.NewTask("test-task", "a random task")
@@ -4835,43 +4841,6 @@ func (s *deviceMgrSuite) TestSignResponseMessageInvalid(c *C) {
 		ErrorMatches,
 		"cannot assemble assertion response-message: invalid account id: 🤫",
 	)
-}
-
-type myStateDeviceInitialized struct {
-	called int
-}
-
-func (m *myStateDeviceInitialized) DeviceInitialized() {
-	m.called++
-}
-
-func (s *deviceMgrSuite) TestDeviceManagerStartupCallbacks(c *C) {
-	modeEnv := &boot.Modeenv{Mode: "run"}
-	err := modeEnv.WriteTo("")
-	c.Assert(err, IsNil)
-	s.setUC20PCModelInState(c)
-
-	mgr, err := devicestate.Manager(s.state, s.hookMgr, s.o.TaskRunner(), s.newStore)
-	c.Assert(err, IsNil)
-
-	callA := &myStateDeviceInitialized{called: 0}
-	callB := &myStateDeviceInitialized{called: 0}
-	mgr.AddOnInit(callA)
-	mgr.AddOnInit(callB)
-
-	sysctlCmd := testutil.MockCommand(c, "systemctl", "")
-	defer sysctlCmd.Restore()
-
-	mountCmd := testutil.MockCommand(c, "systemd-mount", "")
-	defer mountCmd.Restore()
-
-	err = mgr.StartUp()
-	c.Assert(err, IsNil)
-	c.Check(sysctlCmd.Calls(), HasLen, 0)
-	c.Check(mountCmd.Calls(), HasLen, 0)
-
-	c.Check(callA.called, Equals, 1)
-	c.Check(callB.called, Equals, 1)
 }
 
 func (s *deviceMgrSuite) TestDeviceManagerEnsureFDE(c *C) {
