@@ -28,7 +28,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/snapcore/snapd/boot"
@@ -173,14 +172,23 @@ func (m *FDEManager) Ensure() error {
 	return nil
 }
 
-// TODO: move this back to StartUp once we have StartUp dependencies.
-func (m *FDEManager) DeviceInitialized() {
+// StartUp implements StateStarterUp.StartUp.
+func (m *FDEManager) StartUp() error {
 	if m.initErr != ErrNotInitialized {
-		return
+		return nil
 	}
 
 	m.state.Lock()
 	defer m.state.Unlock()
+
+	if snapstate.EarlyDeviceStartup != nil {
+		// DeviceManager.StartUp will report the cached error later in the startup
+		// sequence. Avoid reporting the same error from both managers.
+		if err := snapstate.EarlyDeviceStartup(m.state); err != nil {
+			m.setInitError(fmt.Errorf("cannot perform early device startup: %v", err))
+			return nil
+		}
+	}
 
 	err := func() error {
 		if m.mode == "run" {
@@ -192,11 +200,14 @@ func (m *FDEManager) DeviceInitialized() {
 		}
 		return nil
 	}()
+	m.setInitError(err)
+	return nil
+}
+
+func (m *FDEManager) setInitError(err error) {
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot complete FDE state manager startup: %v\n", err)
 		logger.Noticef("cannot complete FDE state manager startup: %v", err)
 	}
-	// keep track of the error
 	m.initErr = err
 }
 
@@ -215,7 +226,8 @@ func (m *FDEManager) ReloadModeenv() error {
 func (m *FDEManager) Reinitialize() {
 	osutil.MustBeTestBinary("Reinitialize can only be called from tests")
 	m.initErr = ErrNotInitialized
-	m.DeviceInitialized()
+	// StartUp never returns an error, it records it in initErr instead.
+	m.StartUp()
 }
 
 type unlockedStateManager struct {
@@ -290,12 +302,16 @@ func (m *FDEManager) GetEncryptedContainers() ([]backend.EncryptedContainer, err
 // the current device.
 // The list of encrypted disks has no specific order.
 func GetEncryptedContainers(state *state.State) ([]backend.EncryptedContainer, error) {
-	var foundDisks []backend.EncryptedContainer
-
 	deviceCtx, err := snapstate.DeviceCtx(state, nil, nil)
 	if err != nil {
 		return nil, err
 	}
+	return getEncryptedContainers(state, deviceCtx)
+}
+
+func getEncryptedContainers(state *state.State, deviceCtx snapstate.DeviceContext) ([]backend.EncryptedContainer, error) {
+	var foundDisks []backend.EncryptedContainer
+
 	model := deviceCtx.Model()
 
 	dataMountPoints, err := bootHostUbuntuDataForMode(deviceCtx.SystemMode(), model)

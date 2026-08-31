@@ -203,7 +203,6 @@ func New(restartHandler restart.Handler) (*Overlord, error) {
 	if err != nil {
 		return nil, err
 	}
-	deviceMgr.AddOnInit(fdeMgr)
 	o.addManager(deviceMgr)
 
 	o.addManager(clusterstate.Manager(s))

@@ -28,6 +28,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/snapcore/snapd/asserts"
@@ -138,15 +139,6 @@ func (e *noDeviceIdentityYetError) Is(err error) bool {
 	return ok || errors.Is(err, state.ErrNoState)
 }
 
-// StateDeviceInitialized represents another manager that can be
-// notified when the device manager has been started.
-type StateDeviceInitialized interface {
-	// DeviceInitialized is called when StartUp has finished on
-	// DeviceManager. There are no use case for returning an error
-	// so far.
-	DeviceInitialized()
-}
-
 // DeviceManager is responsible for managing the device identity and device
 // policies.
 type DeviceManager struct {
@@ -207,7 +199,8 @@ type DeviceManager struct {
 
 	ntpSyncedOrTimedOut bool
 
-	onInit []StateDeviceInitialized
+	earlyStartupOnce sync.Once
+	earlyStartupErr  error
 
 	xkbConfigListener *keyboard.XKBConfigListener
 }
@@ -363,10 +356,6 @@ const (
 	SysHasModeenv
 )
 
-func (m *DeviceManager) AddOnInit(onInit StateDeviceInitialized) {
-	m.onInit = append(m.onInit, onInit)
-}
-
 // SystemMode returns the current mode of the system.
 // An expectation about the system controls the returned mode when
 // none is set explicitly, as it's the case on pre-UC20 systems. In
@@ -386,20 +375,27 @@ func (m *DeviceManager) SystemMode(sysExpect SysExpectation) string {
 
 // StartUp implements StateStarterUp.Startup.
 func (m *DeviceManager) StartUp() error {
-	err := func() error {
-		m.state.Lock()
-		defer m.state.Unlock()
+	m.state.Lock()
+	defer m.state.Unlock()
+	return m.earlyStartup()
+}
 
+// earlyStartup performs device initialization needed by managers during
+// startup. The caller must hold the state lock.
+func (m *DeviceManager) earlyStartup() error {
+	m.earlyStartupOnce.Do(func() {
 		dev, err := m.earlyDeviceContext(false)
 		if err != nil && !errors.Is(err, state.ErrNoState) {
-			return err
+			m.earlyStartupErr = err
+			return
 		}
 
 		// if ErrNoState then dev is nil, we assume a classic system here,
 		// any error will re-surface again in the main first boot code
 		if dev != nil && m.shouldMountUbuntuSave(dev) {
 			if err := m.setupUbuntuSave(dev); err != nil {
-				return fmt.Errorf("cannot set up ubuntu-save: %v", err)
+				m.earlyStartupErr = fmt.Errorf("cannot set up ubuntu-save: %v", err)
+				return
 			}
 		}
 
@@ -414,18 +410,10 @@ func (m *DeviceManager) StartUp() error {
 		}
 
 		// TODO: setup proper timings measurements for this
-		return EarlyConfig(m.state, m.earlyPreloadGadget)
-	}()
+		m.earlyStartupErr = EarlyConfig(m.state, m.earlyPreloadGadget)
+	})
 
-	if err != nil {
-		return err
-	}
-
-	for _, onInit := range m.onInit {
-		onInit.DeviceInitialized()
-	}
-
-	return nil
+	return m.earlyStartupErr
 }
 
 func (m *DeviceManager) Stop() {

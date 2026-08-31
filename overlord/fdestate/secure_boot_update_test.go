@@ -134,7 +134,7 @@ func (s *fdeMgrSuite) testEFISecurebootPrepareHappyForKind(
 	s.o.AddManager(fdemgr)
 	s.o.AddManager(s.o.TaskRunner())
 	c.Assert(s.o.StartUp(), IsNil)
-	fdemgr.DeviceInitialized()
+	c.Assert(fdemgr.StartUp(), IsNil)
 
 	model := s.mockBootAssetsStateForModeenv(c)
 	s.mockDeviceInState(model, "run")
@@ -260,7 +260,7 @@ func (s *fdeMgrSuite) testEFISecurebootPrepareConflictSelfForKind(
 	s.o.AddManager(fdemgr)
 	s.o.AddManager(s.o.TaskRunner())
 	c.Assert(s.o.StartUp(), IsNil)
-	fdemgr.DeviceInitialized()
+	c.Assert(fdemgr.StartUp(), IsNil)
 
 	model := s.mockBootAssetsStateForModeenv(c)
 	s.mockDeviceInState(model, "run")
@@ -365,7 +365,7 @@ func (s *fdeMgrSuite) TestEFISecurebootPrepareConflictOperationNotInDoingYet(c *
 	s.o.AddManager(fdemgr)
 	s.o.AddManager(s.o.TaskRunner())
 	c.Assert(s.o.StartUp(), IsNil)
-	fdemgr.DeviceInitialized()
+	c.Assert(fdemgr.StartUp(), IsNil)
 
 	model := s.mockBootAssetsStateForModeenv(c)
 	s.mockDeviceInState(model, "run")
@@ -414,7 +414,7 @@ func (s *fdeMgrSuite) testEFISecurebootPrepareConflictSnapChangesForKind(
 	s.o.AddManager(fdemgr)
 	s.o.AddManager(s.o.TaskRunner())
 	c.Assert(s.o.StartUp(), IsNil)
-	fdemgr.DeviceInitialized()
+	c.Assert(fdemgr.StartUp(), IsNil)
 
 	model := s.mockBootAssetsStateForModeenv(c)
 	s.mockDeviceInState(model, "run")
@@ -481,7 +481,7 @@ func (s *fdeMgrSuite) testEFISecurebootUpdateAndCleanupRunningActionForKind(
 	s.o.AddManager(fdemgr)
 	s.o.AddManager(s.o.TaskRunner())
 	c.Assert(s.o.StartUp(), IsNil)
-	fdemgr.DeviceInitialized()
+	c.Assert(fdemgr.StartUp(), IsNil)
 
 	model := s.mockBootAssetsStateForModeenv(c)
 	s.mockDeviceInState(model, "run")
@@ -628,7 +628,7 @@ func (s *fdeMgrSuite) testEFISecurebootUpdateAndUnexpectedStartupActionForKind(
 	s.o.AddManager(fdemgr)
 	s.o.AddManager(s.o.TaskRunner())
 	c.Assert(s.o.StartUp(), IsNil)
-	fdemgr.DeviceInitialized()
+	c.Assert(fdemgr.StartUp(), IsNil)
 
 	model := s.mockBootAssetsStateForModeenv(c)
 	s.mockDeviceInState(model, "run")
@@ -816,7 +816,7 @@ func (s *fdeMgrSuite) testEFISecurebootUpdateAbortForKind(
 	s.o.AddManager(fdemgr)
 	s.o.AddManager(s.o.TaskRunner())
 	c.Assert(s.o.StartUp(), IsNil)
-	fdemgr.DeviceInitialized()
+	c.Assert(fdemgr.StartUp(), IsNil)
 
 	model := s.mockBootAssetsStateForModeenv(c)
 	s.mockDeviceInState(model, "run")
@@ -950,7 +950,7 @@ func (s *fdeMgrSuite) testEFISecurebootUpdateResealFailedAbortsForKind(
 	s.o.AddManager(fdemgr)
 	s.o.AddManager(s.o.TaskRunner())
 	c.Assert(s.o.StartUp(), IsNil)
-	fdemgr.DeviceInitialized()
+	c.Assert(fdemgr.StartUp(), IsNil)
 
 	model := s.mockBootAssetsStateForModeenv(c)
 	s.mockDeviceInState(model, "run")
@@ -1038,7 +1038,7 @@ func (s *fdeMgrSuite) testEFISecurebootUpdatePostUpdateResealFailedForKind(
 	s.o.AddManager(fdemgr)
 	s.o.AddManager(s.o.TaskRunner())
 	c.Assert(s.o.StartUp(), IsNil)
-	fdemgr.DeviceInitialized()
+	c.Assert(fdemgr.StartUp(), IsNil)
 
 	model := s.mockBootAssetsStateForModeenv(c)
 	s.mockDeviceInState(model, "run")
@@ -1166,7 +1166,7 @@ func (s *fdeMgrSuite) testEFISecurebootUpdateUndoResealFailsForKind(
 	s.o.AddManager(fdemgr)
 	s.o.AddManager(s.o.TaskRunner())
 	c.Assert(s.o.StartUp(), IsNil)
-	fdemgr.DeviceInitialized()
+	c.Assert(fdemgr.StartUp(), IsNil)
 
 	model := s.mockBootAssetsStateForModeenv(c)
 	s.mockDeviceInState(model, "run")
@@ -1546,7 +1546,7 @@ func (s *fdeMgrSuite) testEFISecurebootConflictingSnapsForKind(
 	s.o.AddManager(fdemgr)
 	s.o.AddManager(s.o.TaskRunner())
 	c.Assert(s.o.StartUp(), IsNil)
-	fdemgr.DeviceInitialized()
+	c.Assert(fdemgr.StartUp(), IsNil)
 
 	model := s.mockBootAssetsStateForModeenv(c)
 	s.mockDeviceInState(model, "run")

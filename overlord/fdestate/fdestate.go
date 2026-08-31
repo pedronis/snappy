@@ -189,7 +189,12 @@ func initializeState(st *state.State) error {
 		return err
 	}
 
-	disks, err := GetEncryptedContainers(st)
+	deviceCtx, err := snapstate.DeviceCtxForEnsure(st)
+	if err != nil {
+		return err
+	}
+
+	disks, err := getEncryptedContainers(st, deviceCtx)
 	if err != nil {
 		return fmt.Errorf("cannot get encrypted disks: %w", err)
 	}

@@ -193,7 +193,7 @@ func (s *fdeMgrSuite) startedManagerNoEncryptedDisks(c *C, onClassic bool) *fdes
 	manager, err := fdestate.Manager(s.st, s.runner)
 	c.Assert(err, IsNil)
 	s.o.AddManager(manager)
-	manager.DeviceInitialized()
+	c.Assert(manager.StartUp(), IsNil)
 	c.Assert(manager.IsFunctional(), IsNil)
 	c.Assert(s.logbuf.String(), testutil.Contains, "WARNING: no primary key was found")
 	return manager
@@ -270,7 +270,7 @@ func (s *fdeMgrSuite) startedManager(c *C, onClassic bool) *fdestate.FDEManager 
 	manager, err := fdestate.Manager(s.st, s.runner)
 	c.Assert(err, IsNil)
 	s.o.AddManager(manager)
-	manager.DeviceInitialized()
+	c.Assert(manager.StartUp(), IsNil)
 	c.Assert(manager.IsFunctional(), IsNil)
 	return manager
 }
@@ -489,7 +489,7 @@ func (s *fdeMgrSuite) testMountResolveError(c *C, tc mountResolveTestCase) {
 
 	manager, err := fdestate.Manager(s.st, s.runner)
 	c.Assert(err, IsNil)
-	manager.DeviceInitialized()
+	c.Assert(manager.StartUp(), IsNil)
 
 	functionalErr := manager.IsFunctional()
 	if tc.expectedError != "" {
@@ -510,6 +510,93 @@ func (s *fdeMgrSuite) TestStateInitMountResolveError_StatePresentNoError(c *C) {
 	s.testMountResolveError(c, mountResolveTestCase{
 		dataResolveErr: fmt.Errorf("mock degraded mode"),
 	})
+}
+
+func (s *fdeMgrSuite) TestManagerStartupUsesEarlyDeviceContext(c *C) {
+	s.AddCleanup(snapstatetest.MockDeviceContext(nil))
+
+	var calls []string
+	s.AddCleanup(snapstatetest.ReplaceEarlyDeviceStartupHook(func(st *state.State) error {
+		c.Check(st, Equals, s.st)
+		calls = append(calls, "startup")
+		return nil
+	}))
+
+	earlyDeviceCtx := &snapstatetest.TrivialDeviceContext{
+		DeviceModel: &asserts.Model{},
+		SysMode:     "run",
+	}
+	s.AddCleanup(snapstatetest.ReplaceEarlyDeviceCtxForEnsureHook(func(st *state.State, noModel bool) (snapstate.DeviceContext, error) {
+		c.Check(st, Equals, s.st)
+		c.Check(noModel, Equals, true)
+		calls = append(calls, "context")
+		return earlyDeviceCtx, nil
+	}))
+	s.AddCleanup(fdestate.MockDisksDMCryptUUIDFromMountPoint(func(string) (string, error) {
+		return "", disks.ErrNoDmUUID
+	}))
+
+	manager, err := fdestate.Manager(s.st, s.runner)
+	c.Assert(err, IsNil)
+	c.Assert(manager.StartUp(), IsNil)
+	c.Check(manager.IsFunctional(), IsNil)
+	c.Check(calls, DeepEquals, []string{"startup", "context"})
+
+	s.st.Lock()
+	var fdeState fdestate.FdeState
+	err = s.st.Get("fde", &fdeState)
+	s.st.Unlock()
+	c.Assert(err, IsNil)
+
+	// A completed startup is not repeated.
+	c.Assert(manager.StartUp(), IsNil)
+	c.Check(calls, DeepEquals, []string{"startup", "context"})
+}
+
+func (s *fdeMgrSuite) TestManagerStartupExistingStateDoesNotNeedDeviceContext(c *C) {
+	s.st.Lock()
+	s.st.Set("fde", fdestate.FdeState{})
+	s.st.Unlock()
+	s.AddCleanup(snapstatetest.MockDeviceContext(nil))
+	s.AddCleanup(snapstatetest.ReplaceEarlyDeviceCtxForEnsureHook(func(*state.State, bool) (snapstate.DeviceContext, error) {
+		panic("unexpected early device context lookup")
+	}))
+
+	manager, err := fdestate.Manager(s.st, s.runner)
+	c.Assert(err, IsNil)
+	c.Assert(manager.StartUp(), IsNil)
+	c.Check(manager.IsFunctional(), IsNil)
+}
+
+func (s *fdeMgrSuite) TestManagerStartupEarlyDeviceStartupError(c *C) {
+	calls := 0
+	s.AddCleanup(snapstatetest.ReplaceEarlyDeviceStartupHook(func(*state.State) error {
+		calls++
+		return errors.New("early startup failed")
+	}))
+
+	manager, err := fdestate.Manager(s.st, s.runner)
+	c.Assert(err, IsNil)
+	c.Assert(manager.StartUp(), IsNil)
+	c.Check(manager.IsFunctional(), ErrorMatches, "cannot perform early device startup: early startup failed")
+	c.Check(s.logbuf.String(), testutil.Contains, "cannot complete FDE state manager startup: cannot perform early device startup: early startup failed")
+
+	// A failed startup is not repeated.
+	c.Assert(manager.StartUp(), IsNil)
+	c.Check(calls, Equals, 1)
+}
+
+func (s *fdeMgrSuite) TestManagerStartupEarlyDeviceContextError(c *C) {
+	s.AddCleanup(snapstatetest.MockDeviceContext(nil))
+	s.AddCleanup(snapstatetest.ReplaceEarlyDeviceCtxForEnsureHook(func(*state.State, bool) (snapstate.DeviceContext, error) {
+		return nil, errors.New("early context failed")
+	}))
+
+	manager, err := fdestate.Manager(s.st, s.runner)
+	c.Assert(err, IsNil)
+	c.Assert(manager.StartUp(), IsNil)
+	c.Check(manager.IsFunctional(), ErrorMatches, "cannot initialize FDE state: early context failed")
+	c.Check(s.logbuf.String(), testutil.Contains, "cannot complete FDE state manager startup: cannot initialize FDE state: early context failed")
 }
 
 func (s *fdeMgrSuite) TestStateInitMountResolveError_NoDataNoSaveNoError(c *C) {
@@ -571,7 +658,7 @@ func (s *fdeMgrSuite) TestManagerUC_16_18(c *C) {
 	manager, err := fdestate.Manager(s.st, s.runner)
 	c.Assert(err, IsNil)
 
-	manager.DeviceInitialized()
+	c.Assert(manager.StartUp(), IsNil)
 	c.Assert(manager.IsFunctional(), IsNil)
 	c.Assert(manager.Ensure(), IsNil)
 }
@@ -582,7 +669,7 @@ func (s *fdeMgrSuite) TestManagerPreseeding(c *C) {
 	manager, err := fdestate.Manager(s.st, s.runner)
 	c.Assert(err, IsNil)
 
-	manager.DeviceInitialized()
+	c.Assert(manager.StartUp(), IsNil)
 	c.Assert(manager.Ensure(), IsNil)
 	// but the manager is deemed non functional, so API calls will fail
 	c.Assert(manager.IsFunctional(), ErrorMatches, "internal error: FDE manager cannot be used in preseeding mode")

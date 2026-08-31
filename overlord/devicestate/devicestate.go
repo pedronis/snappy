@@ -297,7 +297,8 @@ func delayedCrossMgrInit() {
 	snapstate.CanAutoRefresh = canAutoRefresh
 	snapstate.IsOnMeteredConnection = netutil.IsOnMeteredConnection
 	snapstate.DeviceCtx = DeviceCtx
-	snapstate.EarlyDeviceCtxForEnsure = EarlyDeviceCtx
+	snapstate.EarlyDeviceStartup = earlyStartup
+	snapstate.EarlyDeviceCtxForEnsure = earlyDeviceCtx
 	snapstate.RemodelingChange = RemodelingChange
 	snapstate.CreateSeedRefreshTasks = SeedRefreshTasks
 	snapstate.PendingSeedRefreshTasks = PendingSeedRefreshTasks

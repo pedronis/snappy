@@ -53,11 +53,19 @@ func DeviceCtx(st *state.State, task *state.Task, providedDeviceCtx snapstate.De
 	return newModelDeviceContext(devMgr, modelAs), nil
 }
 
-// EarlyDeviceCtx resolves a device context from the acknowledged model or the
-// selected seed. If noModel is true, it skips looking up the acknowledged
-// model. Callers must hold the state lock.
-func EarlyDeviceCtx(st *state.State, noModel bool) (snapstate.DeviceContext, error) {
+// earlyDeviceCtx resolves a device context from the acknowledged model or,
+// when noModel is true or no model is acknowledged yet, from the selected
+// seed. It backs the snapstate.EarlyDeviceCtxForEnsure hook. The caller must
+// hold the state lock.
+func earlyDeviceCtx(st *state.State, noModel bool) (snapstate.DeviceContext, error) {
 	return deviceMgr(st).earlyDeviceContext(noModel)
+}
+
+// earlyStartup drives the device manager early startup so that managers
+// starting up before it can rely on device initialization. It backs the
+// snapstate.EarlyDeviceStartup hook. The caller must hold the state lock.
+func earlyStartup(st *state.State) error {
+	return deviceMgr(st).earlyStartup()
 }
 
 type groundDeviceContext struct {

@@ -160,6 +160,14 @@ func ReplaceEarlyDeviceCtxForEnsureHook(earlyDeviceCtxHook func(st *state.State,
 	}
 }
 
+func ReplaceEarlyDeviceStartupHook(earlyDeviceStartupHook func(st *state.State) error) (restore func()) {
+	oldHook := snapstate.EarlyDeviceStartup
+	snapstate.EarlyDeviceStartup = earlyDeviceStartupHook
+	return func() {
+		snapstate.EarlyDeviceStartup = oldHook
+	}
+}
+
 func UseFallbackDeviceModel() (restore func()) {
 	return MockDeviceModel(sysdb.GenericClassicModel())
 }
